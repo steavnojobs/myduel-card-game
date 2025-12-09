@@ -642,6 +642,7 @@ export default function App() {
                   myDeckIds={myDeckIds} 
                   setMyDeckIds={setMyDeckIds} 
                   onBack={() => setView('menu')}
+                  onContextMenu={handleContextMenu}
               />
           )}
 

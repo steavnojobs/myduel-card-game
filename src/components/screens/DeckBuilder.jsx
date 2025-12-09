@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { RotateCcw, Trash2, Save, CheckCircle, Minus, Swords } from 'lucide-react';
+import { RotateCcw, Trash2, Save, CheckCircle, Minus } from 'lucide-react';
 import Card from '../game/Card';
 import { CARD_DATABASE } from '../../data/cards';
 import { DECK_SIZE, MAX_COPIES_IN_DECK } from '../../data/rules';
-import { getCard, getCardBorderColor } from '../../utils/helpers';
+import { getCard } from '../../utils/helpers';
 
-const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack }) => {
+// ★ onContextMenu を受け取るように変更！
+const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack, onContextMenu }) => {
     const [saveMessage, setSaveMessage] = useState("");
     const [isDragging, setIsDragging] = useState(false);
 
@@ -41,7 +42,6 @@ const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack }) => {
     };
 
     const resetDeck = () => {
-        // デフォルトデッキの生成ロジック（簡易版）
         const validCards = CARD_DATABASE.filter(c => !c.token);
         const defaultDeck = [];
         for(let i=0; i<DECK_SIZE; i++) {
@@ -93,8 +93,9 @@ const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack }) => {
 
             <div className="flex gap-4 h-[calc(100vh-100px)]">
                 {/* 左：カードライブラリ */}
+                {/* ★修正: p-4 を追加して、アイコンが見切れないようにしたよ！ */}
                 <div 
-                    className={`flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 content-start pr-2 rounded transition-colors ${isDragging ? 'bg-white/5' : ''}`}
+                    className={`flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 content-start p-4 rounded transition-colors ${isDragging ? 'bg-white/5' : ''}`}
                     onDragOver={handleDragOver} 
                     onDrop={(e) => handleDrop(e, 'library')}
                 >
@@ -110,6 +111,7 @@ const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack }) => {
                                 onClick={() => addCardToDeck(card.id)}
                                 onDragStart={(e) => handleDragStart(e, card, 'library')}
                                 onDragEnd={() => setIsDragging(false)}
+                                onContextMenu={(e) => onContextMenu(e, card)} // ★これを追加！
                             />
                         )
                     })}
@@ -132,6 +134,7 @@ const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack }) => {
                                 onDragEnd={() => setIsDragging(false)}
                                 className="flex items-center justify-between bg-slate-800 mb-1 p-2 rounded border border-slate-700 text-sm cursor-grab active:cursor-grabbing hover:bg-slate-700 transition"
                                 onClick={() => removeCardFromDeck(id)}
+                                onContextMenu={(e) => onContextMenu(e, card)} // ★ここも追加！
                             >
                                 <span>{card.emoji} {card.name}</span>
                                 <div className="flex items-center gap-2">
