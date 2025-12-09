@@ -6,7 +6,7 @@ import { DECK_SIZE, MAX_COPIES_IN_DECK } from '../../data/rules';
 import { getCard } from '../../utils/helpers';
 
 // ★ onContextMenu を受け取るように変更！
-const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack, onContextMenu }) => {
+const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack, onContextMenu, onBackgroundClick }) => {    
     const [saveMessage, setSaveMessage] = useState("");
     const [isDragging, setIsDragging] = useState(false);
 
@@ -74,7 +74,10 @@ const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack, onContextMenu }) => {
     };
 
     return (
-        <div className="flex flex-col w-full min-h-screen bg-slate-900 text-white p-4 select-none">
+        <div 
+            className="flex flex-col w-full min-h-screen bg-slate-900 text-white p-4 select-none"
+            onClick={onBackgroundClick} 
+        >
             {/* ヘッダー */}
             <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
                 <div className="flex items-center gap-4">
