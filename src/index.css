@@ -1,0 +1,59 @@
+/* 1. Tailwind CSS を発動させる呪文 (必須！) */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 2. ゲーム全体の基本設定 */
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* ブラウザのデフォルトをダークモード基準にする */
+  color-scheme: dark;
+  background-color: #0f172a; /* bg-slate-900 と同じ色 */
+  color: rgba(255, 255, 255, 0.87);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  
+  /* ⚠️ ゲーム画面が勝手にスクロールしないように body を固定！ */
+  overflow: hidden; 
+  
+  /* ⚠️ テキストをドラッグ選択できないようにする（ゲームっぽく！） */
+  user-select: none; 
+  -webkit-user-select: none;
+}
+
+/* 3. スクロールバーをダークテーマに合わせてカッコよくする (Chrome/Edge/Safari用) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b; /* bg-slate-800 */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569; /* bg-slate-600 */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b; /* bg-slate-500 */
+}
+
+/* 4. スマホ対応：iPhoneの下のバー（ホームバー）と被らないようにする便利クラス */
+.pb-safe {
+  padding-bottom: constant(safe-area-inset-bottom); /* iOS 11.0 */
+  padding-bottom: env(safe-area-inset-bottom); /* iOS 11.2+ */
+}
+
+/* 5. ユーティリティ：ドラッグ中の要素を半透明にするなどの微調整 */
+.dragging {
+  opacity: 0.5;
+}
