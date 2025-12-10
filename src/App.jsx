@@ -59,7 +59,6 @@ export default function App() {
 
   const myRole = isHost ? 'host' : 'guest';
   const enemyRole = isHost ? 'guest' : 'host';
-  // データ読み込み前は false にしておくガード
   const isMyTurn = gameData && gameData.currentTurn === myRole;
 
   const isDeckValidStrict = (deck) => {
@@ -135,7 +134,8 @@ export default function App() {
                        return { ...unit, currentHp: Math.min(unit.currentHp + unit.onDrawTrigger.value, unit.health) };
                    }
                    if (unit.onDrawTrigger.type === 'heal_face') {
-                       const currentHp = updates[`${rolePrefix}.hp`] !== undefined ? updates[`${rolePrefix}.hp`] : latestGameData[rolePrefix].hp;
+                       const baseHp = latestGameData?.[rolePrefix]?.hp || INITIAL_HP;
+                       const currentHp = updates[`${rolePrefix}.hp`] !== undefined ? updates[`${rolePrefix}.hp`] : baseHp;
                        updates[`${rolePrefix}.hp`] = currentHp + unit.onDrawTrigger.value;
                        triggerLogs.push(`${unit.name}の効果でリーダー回復！`);
                    }
@@ -154,6 +154,8 @@ export default function App() {
 
   const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefix, latestGameData, sourceUnitUid = null) => {
       if (!effect) return "";
+      if (!me || !enemy || !latestGameData) return "";
+
       let logMsg = "";
       const currentEnemyBoard = updates[`${enemyPrefix}.board`] || enemy.board;
       const currentMeBoard = updates[`${rolePrefix}.board`] || me.board;
@@ -301,9 +303,7 @@ export default function App() {
   };
 
   const playCard = async (card) => {
-    // ★ガード: データ読み込み前なら何もしない！
     if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
-
     if (!isMyTurn || gameData.turnPhase !== 'main') return;
     const me = gameData[myRole];
     const enemy = gameData[enemyRole];
@@ -363,7 +363,6 @@ export default function App() {
   };
 
   const attack = async (targetType, targetUid = null) => {
-      // ★ガード: データ読み込み前なら何もしない！
       if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
 
       if (!isMyTurn || !selectedUnit || gameData.turnPhase !== 'main') return;
@@ -457,7 +456,6 @@ export default function App() {
   };
 
   const endTurn = async () => {
-    // ★ガード: データ読み込み前なら何もしない！
     if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
 
     if (!isMyTurn) return;
@@ -494,7 +492,6 @@ export default function App() {
   };
 
   const resolveStartPhase = async (choice) => {
-    // ★ガード: データ読み込み前なら何もしない！
     if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
 
     if (!isMyTurn || gameData.turnPhase !== 'start_choice') return;
@@ -673,7 +670,6 @@ export default function App() {
           {view === 'game' && gameData && (
               <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onClick={handleBackgroundClick} onContextMenu={(e) => e.preventDefault()}>
                   
-                  {/* ★自分のターンの戦略フェーズ */}
                   {isMyTurn && gameData.turnPhase === 'start_choice' && (
                       <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center animate-in fade-in duration-300">
                           <div className="flex flex-col items-center gap-8">
@@ -682,17 +678,6 @@ export default function App() {
                                   <button onClick={() => resolveStartPhase('mana')} className="group flex flex-col items-center justify-center w-48 h-64 bg-slate-800 border-4 border-blue-500 rounded-xl hover:bg-blue-900 hover:scale-105 transition-all"><Zap size={48} className="text-white"/><div className="text-2xl font-bold mt-2">マナチャージ</div></button>
                                   <button onClick={() => resolveStartPhase('draw')} className="group flex flex-col items-center justify-center w-48 h-64 bg-slate-800 border-4 border-green-500 rounded-xl hover:bg-green-900 hover:scale-105 transition-all"><Layers size={48} className="text-white"/><div className="text-2xl font-bold mt-2">ドロー強化</div></button>
                               </div>
-                          </div>
-                      </div>
-                  )}
-
-                  {/* ★追加！相手のターンの戦略フェーズ (フリーズ勘違い防止用) */}
-                  {!isMyTurn && gameData.turnPhase === 'start_choice' && (
-                      <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center animate-in fade-in duration-300">
-                          <div className="bg-slate-800 p-8 rounded-xl border border-slate-600 shadow-2xl flex flex-col items-center gap-4">
-                              <div className="animate-spin text-4xl">⏳</div>
-                              <h2 className="text-2xl font-bold text-white">相手が戦略を選択中...</h2>
-                              <p className="text-slate-400 text-sm">どっちを選ぶかな？</p>
                           </div>
                       </div>
                   )}
