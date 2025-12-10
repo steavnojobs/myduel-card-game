@@ -23,7 +23,7 @@ const Card = ({
   
   switch (location) {
     case 'board':
-      sizeStyle = "w-16 h-24 md:w-20 md:h-28"; // 盤面は固定サイズ
+      sizeStyle = "w-20 h-32 md:w-32 md:h-48";
       if (isSelected) {
         behaviorStyle = "cursor-crosshair ring-4 ring-green-400 -translate-y-2 shadow-[0_0_15px_rgba(74,222,128,0.5)] z-10";
       } else if (card.type === 'unit' && !card.canAttack) {
