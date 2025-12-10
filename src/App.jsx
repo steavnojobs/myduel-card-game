@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Swords, Users, Copy, Zap, Layers, Play } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 
-// --- 自作データのインポート ---
 import { INITIAL_HP, INITIAL_MANA, MAX_MANA_LIMIT, MAX_BOARD_SIZE, DECK_SIZE, MAX_COPIES_IN_DECK } from './data/rules';
 import { CARD_DATABASE, MANA_COIN } from './data/cards';
 import { generateId, getCard, getDeckSummary, shuffleDeck } from './utils/helpers';
 
-// --- 新しいコンポーネントたち ---
 import CardDetailModal from './components/game/CardDetailModal';
 import GameHeader from './components/game/GameHeader';
 import GameBoard from './components/game/GameBoard';
@@ -17,7 +15,6 @@ import PlayerConsole from './components/game/PlayerConsole';
 import GameSidebar from './components/game/GameSidebar';
 import DeckBuilder from './components/screens/DeckBuilder';
 
-// --- Firebase設定 ---
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -27,12 +24,17 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = 'my-card-game'; // アプリIDは固定でOK
+let app, auth, db;
+if (firebaseConfig.apiKey) {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} else {
+  console.error("Firebase設定が見つかりません。.envを確認してください！");
+}
 
-// --- エラーハンドリング ---
+const appId = 'my-card-game'; 
+
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError(error) { return { hasError: true }; }
@@ -44,7 +46,6 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App() {
-  // --- State定義 ---
   const [userId, setUserId] = useState(null); 
   const [view, setView] = useState('menu'); 
   const [myDeckIds, setMyDeckIds] = useState([]);
@@ -58,9 +59,9 @@ export default function App() {
 
   const myRole = isHost ? 'host' : 'guest';
   const enemyRole = isHost ? 'guest' : 'host';
+  // データ読み込み前は false にしておくガード
   const isMyTurn = gameData && gameData.currentTurn === myRole;
 
-  // --- ヘルパー関数 ---
   const isDeckValidStrict = (deck) => {
       if (!Array.isArray(deck) || deck.length !== DECK_SIZE) return false;
       const allValid = deck.every(id => getCard(id).id !== 9999);
@@ -74,20 +75,15 @@ export default function App() {
   };
 
   const getRoomRef = (rId) => doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${rId}`);
-  const getDeckForGame = () => {
-      // 簡易的なデッキ取得：構築画面のデッキをそのまま使う
-      // 本来はsanitizeDeckなどのチェックを入れると良い
-      return myDeckIds;
-  };
+  const getDeckForGame = () => myDeckIds;
 
-  // --- Firebase Init ---
   useEffect(() => {
     let sId = sessionStorage.getItem('duel_session_id');
     if (!sId) { sId = generateId(); sessionStorage.setItem('duel_session_id', sId); }
     setUserId(sId);
 
     const initAuth = async () => {
-        await signInAnonymously(auth);
+        if (auth) await signInAnonymously(auth);
     };
     initAuth();
 
@@ -101,9 +97,8 @@ export default function App() {
     if (!isDeckInitialized.current) loadDeck();
   }, []);
 
-  // --- Game Sync ---
   useEffect(() => {
-    if (!roomId || !userId) return; 
+    if (!roomId || !userId || !db) return; 
     const roomRef = getRoomRef(roomId);
     const unsubscribe = onSnapshot(roomRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -123,7 +118,6 @@ export default function App() {
     return () => unsubscribe();
   }, [roomId, view, userId]);
 
-  // --- ゲームロジック (完全版) ---
   const handleDraw = (currentDeck, currentHand, currentBoard, updates, rolePrefix, latestGameData) => {
       if (currentDeck.length > 0 && currentHand.length < 10) {
           const drawnCard = currentDeck.shift();
@@ -307,7 +301,10 @@ export default function App() {
   };
 
   const playCard = async (card) => {
-    if (!isMyTurn || !gameData || gameData.turnPhase !== 'main') return;
+    // ★ガード: データ読み込み前なら何もしない！
+    if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
+
+    if (!isMyTurn || gameData.turnPhase !== 'main') return;
     const me = gameData[myRole];
     const enemy = gameData[enemyRole];
     if (me.mana < card.cost) return;
@@ -332,7 +329,6 @@ export default function App() {
         }
     }
 
-    // 死亡判定など
     const checkDeath = (board, prefix, enemyPrefix) => {
         if (!board) return;
         let deadUnits = [];
@@ -367,7 +363,10 @@ export default function App() {
   };
 
   const attack = async (targetType, targetUid = null) => {
-      if (!isMyTurn || !selectedUnit || !gameData || gameData.turnPhase !== 'main') return;
+      // ★ガード: データ読み込み前なら何もしない！
+      if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
+
+      if (!isMyTurn || !selectedUnit || gameData.turnPhase !== 'main') return;
       const me = gameData[myRole];
       const enemy = gameData[enemyRole];
       const attacker = me.board.find(u => u.uid === selectedUnit);
@@ -376,10 +375,9 @@ export default function App() {
 
       if (targetType === 'unit') {
           const targetUnit = enemy.board.find(u => u.uid === targetUid);
-          if (targetUnit.elusive && !attacker.elusive) return; // 回避
+          if (targetUnit.elusive && !attacker.elusive) return; 
       }
 
-      // 挑発チェック
       const tauntUnits = enemy.board.filter(u => u.taunt && u.currentHp > 0);
       const attackableTaunts = tauntUnits.filter(t => !t.elusive || attacker.elusive);
       if (attackableTaunts.length > 0) {
@@ -425,7 +423,6 @@ export default function App() {
           actionLog = `⚔️ ${attacker.name} vs ${target.name}`;
       }
 
-      // 死亡処理
       const handleDeath = (board, prefix, oppPrefix) => {
           let dead = board.filter(u => u.currentHp <= 0);
           let alive = board.filter(u => u.currentHp > 0);
@@ -460,13 +457,15 @@ export default function App() {
   };
 
   const endTurn = async () => {
-    if (!isMyTurn || !gameData) return;
+    // ★ガード: データ読み込み前なら何もしない！
+    if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
+
+    if (!isMyTurn) return;
     const roomRef = getRoomRef(roomId);
     const me = gameData[myRole];
     let updates = {};   
     let effectLogs = [];
     
-    // 建物などのターン終了効果
     updates[`${myRole}.board`] = me.board;
     me.board.forEach(card => {
         if (card.type === 'building' && card.turnEnd) {
@@ -478,13 +477,11 @@ export default function App() {
     const nextTurn = myRole === 'host' ? 'guest' : 'host';
     const nextPlayer = gameData[nextTurn];
     
-    // 建物の耐久を減らす
     let nextPlayerBoard = nextPlayer.board.map(card => {
         if (card.type === 'building') return { ...card, currentHp: card.currentHp - 1 };
         return card;
     }).filter(u => u.currentHp > 0);
     
-    // 攻撃権のリセット
     nextPlayerBoard = nextPlayerBoard.map(u => ({ ...u, canAttack: true }));
 
     updates.currentTurn = nextTurn;
@@ -497,7 +494,10 @@ export default function App() {
   };
 
   const resolveStartPhase = async (choice) => {
-    if (!isMyTurn || !gameData || gameData.turnPhase !== 'start_choice') return;
+    // ★ガード: データ読み込み前なら何もしない！
+    if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
+
+    if (!isMyTurn || gameData.turnPhase !== 'start_choice') return;
     const roomRef = getRoomRef(roomId);
     const me = gameData[myRole];
     let updates = {};
@@ -549,7 +549,6 @@ export default function App() {
     let hostMaxMana = INITIAL_MANA;
     let hostMana = INITIAL_MANA;
     
-    // 後攻はマナコイン
     if (firstTurn !== 'host') {
         hostHand.push({ ...MANA_COIN, uid: generateId() });
     }
@@ -587,7 +586,6 @@ export default function App() {
         let guestMaxMana = INITIAL_MANA;
         let guestMana = INITIAL_MANA;
 
-        // 後攻はマナコイン
         if (data.currentTurn !== 'guest') {
             guestHand.push({ ...MANA_COIN, uid: generateId() });
         }
@@ -622,12 +620,12 @@ export default function App() {
 
   return (
       <ErrorBoundary>
-          <CardDetailModal detailCard={detailCard} />
+          <CardDetailModal detailCard={detailCard} onClose={() => setDetailCard(null)} />
 
           {view === 'menu' && (
               <div className="flex flex-col items-center justify-center w-full min-h-screen bg-slate-900 text-white font-sans select-none" onClick={handleBackgroundClick}>
                   <h1 className="text-6xl font-bold mb-4 text-blue-400">DUEL CARD GAME</h1>
-                  <p className="mb-8 text-slate-400">Ver 10.0: Refactored Edition ✨</p>
+                  <p className="mb-8 text-slate-400">Ver 11.0: Visual Update & Bug Fixes ✨</p>
                   <div className="flex flex-col gap-4 w-64">
                       <button onClick={() => setView('deck')} className="bg-indigo-600 hover:bg-indigo-500 py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2"><Swords size={20}/> デッキ構築</button>
                       <button onClick={() => setView('lobby')} disabled={!isDeckValidStrict(myDeckIds)} className={`w-full py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2 ${isDeckValidStrict(myDeckIds) ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
@@ -674,6 +672,8 @@ export default function App() {
 
           {view === 'game' && gameData && (
               <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onClick={handleBackgroundClick} onContextMenu={(e) => e.preventDefault()}>
+                  
+                  {/* ★自分のターンの戦略フェーズ */}
                   {isMyTurn && gameData.turnPhase === 'start_choice' && (
                       <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center animate-in fade-in duration-300">
                           <div className="flex flex-col items-center gap-8">
@@ -682,6 +682,17 @@ export default function App() {
                                   <button onClick={() => resolveStartPhase('mana')} className="group flex flex-col items-center justify-center w-48 h-64 bg-slate-800 border-4 border-blue-500 rounded-xl hover:bg-blue-900 hover:scale-105 transition-all"><Zap size={48} className="text-white"/><div className="text-2xl font-bold mt-2">マナチャージ</div></button>
                                   <button onClick={() => resolveStartPhase('draw')} className="group flex flex-col items-center justify-center w-48 h-64 bg-slate-800 border-4 border-green-500 rounded-xl hover:bg-green-900 hover:scale-105 transition-all"><Layers size={48} className="text-white"/><div className="text-2xl font-bold mt-2">ドロー強化</div></button>
                               </div>
+                          </div>
+                      </div>
+                  )}
+
+                  {/* ★追加！相手のターンの戦略フェーズ (フリーズ勘違い防止用) */}
+                  {!isMyTurn && gameData.turnPhase === 'start_choice' && (
+                      <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center animate-in fade-in duration-300">
+                          <div className="bg-slate-800 p-8 rounded-xl border border-slate-600 shadow-2xl flex flex-col items-center gap-4">
+                              <div className="animate-spin text-4xl">⏳</div>
+                              <h2 className="text-2xl font-bold text-white">相手が戦略を選択中...</h2>
+                              <p className="text-slate-400 text-sm">どっちを選ぶかな？</p>
                           </div>
                       </div>
                   )}
