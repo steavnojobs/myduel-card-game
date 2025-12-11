@@ -10,7 +10,7 @@ const MAX_COPIES = 3;
 
 export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContextMenu, onBackgroundClick }) {
 
-  // ★追加: 表示するカードの種類を管理するステート
+  // 表示するカードの種類を管理
   const [filterType, setFilterType] = useState('all'); // 'all', 'unit', 'spell', 'building'
 
   // デッキの分析データ
@@ -56,17 +56,17 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
 
   const getCountInDeck = (cardId) => myDeckIds.filter(id => id === cardId).length;
 
-  // ★修正: フィルタリング機能を追加したカードプール
+  // フィルタリング機能を追加したカードプール
   const filteredCardPool = useMemo(() => {
     return CARD_DATABASE
-      .filter(c => !c.token && c.id < 900)
-      // ★ここでタブに合わせて絞り込み！
+      // ★修正: ユーザー指定！ ID 9000未満 (トークン除外) を表示！
+      .filter(c => !c.token && c.id < 9000) 
       .filter(c => filterType === 'all' || c.type === filterType)
       .sort((a, b) => {
         if (a.cost !== b.cost) return a.cost - b.cost;
         return a.id - b.id;
       });
-  }, [filterType]); // filterTypeが変わるたびに再計算
+  }, [filterType]);
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white font-sans select-none overflow-hidden" onClick={onBackgroundClick}>
@@ -93,7 +93,8 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
           
           <button onClick={() => {
              const randomDeck = [];
-             const validCards = CARD_DATABASE.filter(c => !c.token && c.id < 900);
+             // ★修正: ここも ID 9000未満 から選ぶように変更！
+             const validCards = CARD_DATABASE.filter(c => !c.token && c.id < 9000);
              while (randomDeck.length < DECK_SIZE) {
                const randomCard = validCards[Math.floor(Math.random() * validCards.length)];
                const currentCount = randomDeck.filter(id => id === randomCard.id).length;
@@ -121,7 +122,7 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
         {/* LEFT: カードプール */}
         <div className="flex-1 flex flex-col min-w-0 bg-slate-900/50">
           
-          {/* ★追加: カテゴリ切り替えタブ */}
+          {/* カテゴリ切り替えタブ */}
           <div className="flex items-center gap-2 p-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-20 overflow-x-auto custom-scrollbar">
              {[
                { id: 'all', label: 'すべて', icon: Grid, color: 'text-white' },
@@ -145,7 +146,7 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
              ))}
           </div>
 
-          {/* カードリスト (フィルタ適用済み) */}
+          {/* カードリスト */}
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
             <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 pb-20">
               {filteredCardPool.map((card) => {
@@ -179,7 +180,6 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                 );
               })}
               
-              {/* カードがない時のメッセージ */}
               {filteredCardPool.length === 0 && (
                 <div className="col-span-full h-40 flex flex-col items-center justify-center text-slate-500">
                   <div className="text-4xl mb-2">📦</div>
@@ -243,7 +243,7 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
           <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-slate-900/30">
             {myDeckIds.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2">
-                <div className="text-4xl">🎴</div>
+                <div className="text-4xl"></div>
                 <p className="text-sm">カードを選んでね！</p>
               </div>
             ) : (
@@ -257,7 +257,7 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                       onContextMenu={(e) => onContextMenu(e, card)}
                       className="relative group cursor-pointer aspect-[2/3] transition-transform hover:scale-105 hover:z-10"
                     >
-                      <div className="absolute inset-0 rounded overflow-hidden shadow-md" style={{ containerType: 'size' }}>
+                      <div className="absolute inset-0 rounded overflow-hidden shadow-md">
                         <img 
                           src={`/images/cards/${card.id}.webp`} 
                           draggable={false}
@@ -271,19 +271,36 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                           alt="frame"
                         />
                         
-                        <div className="absolute top-[2%] left-[2%] w-[25%] aspect-square bg-blue-600 rounded-full flex items-center justify-center shadow-md border border-white/30 z-20">
-                          <span className="font-black text-white text-[60cqw]">{card.cost}</span>
+                        {/* コストバッジ */}
+                        {/* ★修正: 親のdivではなく、バッジ自体に containerType を設定して、中の文字サイズを調整！ */}
+                        <div 
+                          className="absolute top-[2%] left-[2%] w-[25%] aspect-square bg-blue-600 rounded-full flex items-center justify-center shadow-md border border-white/30 z-20"
+                          style={{ containerType: 'size' }}
+                        >
+                          {/* 50cqwくらいがちょうどいい！ */}
+                          <span className="font-black text-white text-[90cqw] pt-[1px]">{card.cost}</span>
                         </div>
 
                         {card.type === 'unit' && (
                           <>
-                            <div className="absolute bottom-[3%] left-[3%] w-[24%] aspect-square z-20">
+                            {/* 攻撃力 */}
+                            {/* ★修正: ここも containerType を個別に設定！ */}
+                            <div 
+                              className="absolute bottom-[3%] left-[3%] w-[24%] aspect-square z-20"
+                              style={{ containerType: 'size' }}
+                            >
                               <img src="/images/attack_icon.png" className="absolute inset-0 w-full h-full object-contain drop-shadow-md" draggable={false}/>
-                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[50cqw] pt-[1px] drop-shadow-md">{card.attack}</div>
+                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[90cqw] pt-[1px] drop-shadow-md">{card.attack}</div>
                             </div>
-                            <div className="absolute bottom-[3%] right-[3%] w-[24%] aspect-square z-20">
+                            
+                            {/* 体力 */}
+                            {/* ★修正: ここも containerType を個別に設定！ */}
+                            <div 
+                              className="absolute bottom-[3%] right-[3%] w-[24%] aspect-square z-20"
+                              style={{ containerType: 'size' }}
+                            >
                               <img src="/images/health_icon.png" className="absolute inset-0 w-full h-full object-contain drop-shadow-md" draggable={false}/>
-                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[50cqw] pt-[1px] drop-shadow-md">{card.currentHp !== undefined ? card.currentHp : card.health}</div>
+                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[90cqw] pt-[1px] drop-shadow-md">{card.currentHp !== undefined ? card.currentHp : card.health}</div>
                             </div>
                           </>
                         )}
