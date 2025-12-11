@@ -1,66 +1,105 @@
 import React from 'react';
-import { Heart, Swords, Landmark } from 'lucide-react';
+// Xアイコンはもう使わないので削除してOK！
+// import { X } from 'lucide-react'; 
+import Card from './Card'; 
 
-const CardDetailModal = ({ detailCard }) => {
-    if (!detailCard) return null;
+const CardDetailModal = ({ detailCard, onClose }) => {
+  if (!detailCard) return null;
 
-    return (
-        <div className="fixed top-4 left-4 z-50 w-72 bg-black/80 border border-slate-500 rounded-lg p-4 text-white shadow-2xl backdrop-blur-sm pointer-events-none select-none">
-            {/* ヘッダー */}
-            <div className="flex justify-between items-start mb-2">
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                    <span className="text-3xl">{detailCard.emoji || "?"}</span>
-                    {detailCard.name || "Unknown"}
-                </h3>
-            </div>
+  return (
+    // ★修正1: 画面全体を覆う透明なクリッカブル領域を作る (fixed inset-0)
+    // これなら背景（カードプール）は丸見えだけど、クリック判定は拾える！
+    <div 
+      className="fixed inset-0 z-[100] bg-transparent"
+      onClick={onClose} // どこを押しても閉じる！
+    >
+      {/* 詳細ウィンドウ本体 */}
+      {/* 左上(top-8 left-8)に固定配置！ */}
+      <div 
+        className="absolute top-8 left-8 bg-slate-900/95 border border-slate-700 rounded-2xl w-[800px] max-w-[90vw] flex flex-row overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md animate-in fade-in slide-in-from-left-4 duration-300 origin-top-left scale-90"
+        onClick={(e) => e.stopPropagation()} // ウィンドウの中をクリックした時は閉じないようにする
+      >
+        
+        {/* ★修正2: 閉じるボタンは削除しました！スッキリ！★ */}
 
-            {/* タグ情報 */}
-            <div className="flex gap-2 text-sm mb-3">
-                <div className="px-2 py-1 bg-blue-900 rounded border border-blue-500">
-                    コスト: {detailCard.cost}
-                </div>
-                <div className="px-2 py-1 bg-slate-700 rounded border border-slate-500 capitalize">
-                    {detailCard.type}
-                </div>
-            </div>
+        {/* --- 左側：巨大カード表示エリア --- */}
+        <div className="bg-slate-950 p-6 flex items-center justify-center w-1/2 border-r border-slate-800 relative overflow-hidden group">
+          
+          {/* 背景ボカシ画像 */}
+          <div className="absolute inset-0 opacity-20 pointer-events-none">
+            <img 
+              src={`/images/cards/${detailCard.id}.webp`} 
+              className="w-full h-full object-cover blur-xl scale-150"
+              alt=""
+            />
+          </div>
 
-            {/* スタッツ */}
-            {detailCard.type === 'unit' && (
-                <div className="flex gap-4 mb-3">
-                    <div className="flex items-center gap-1 text-yellow-400 font-bold text-lg">
-                        <Swords size={20}/> {detailCard.attack}
-                    </div>
-                    <div className="flex items-center gap-1 text-red-400 font-bold text-lg">
-                        <Heart size={20}/> {detailCard.health}
-                    </div>
-                </div>
-            )}
-            {detailCard.type === 'building' && (
-                <div className="flex items-center gap-1 text-red-400 font-bold text-lg mb-3">
-                    <Landmark size={20}/> 耐久: {detailCard.health}
-                </div>
-            )}
-
-            {/* 能力バッジ */}
-            <div className="flex gap-1 mb-2 flex-wrap">
-              {detailCard.taunt && <span className="bg-red-900/50 text-red-300 px-2 py-1 rounded text-xs border border-red-500 font-bold">🛡️ 挑発</span>}
-              {detailCard.haste && <span className="bg-yellow-900/50 text-yellow-300 px-2 py-1 rounded text-xs border border-yellow-500 font-bold">⚡ 速攻</span>}
-              {detailCard.bane && <span className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs border border-purple-500 font-bold">☠️ 相討ち</span>}
-              {detailCard.elusive && <span className="bg-green-900/50 text-green-300 px-2 py-1 rounded text-xs border border-green-500 font-bold">🍃 回避</span>}
-            </div>
-
-            {/* 説明文 */}
-            <div className="bg-slate-800/50 p-2 rounded text-sm text-slate-300 leading-relaxed border border-white/10">
-                {detailCard.description}
-                {detailCard.onDeath && <div className="mt-1 text-purple-300 text-xs">※ 破壊時効果あり</div>}
-                {detailCard.onAttack && <div className="mt-1 text-orange-300 text-xs">※ 攻撃時効果あり</div>}
-                {detailCard.onDrawTrigger && <div className="mt-1 text-blue-300 text-xs">※ ドロー時効果あり</div>}
-                {detailCard.turnEnd && <div className="mt-1 text-yellow-300 text-xs">※ ターン終了時効果あり</div>}
-            </div>
-            
-            <div className="mt-2 text-[10px] text-slate-500 text-right">右クリックで詳細表示中</div>
+          {/* 巨大カード */}
+          <div className="relative z-10 scale-90 transition-transform duration-500 group-hover:scale-100">
+            <Card 
+              card={detailCard} 
+              location="detail" 
+            />
+          </div>
         </div>
-    );
+
+        {/* --- 右側：詳細テキスト情報エリア --- */}
+        <div className="p-6 w-1/2 flex flex-col gap-4 text-white max-h-[600px] overflow-y-auto custom-scrollbar">
+          
+          {/* 名前とコスト */}
+          <div className="border-b border-slate-700 pb-3">
+            <div className="flex items-center justify-between mb-1">
+               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{detailCard.type.toUpperCase()}</span>
+               <div className="flex items-center gap-1 bg-blue-900/50 px-3 py-1 rounded-full border border-blue-500/30">
+                 <span className="text-blue-300 text-xs font-bold">COST</span>
+                 <span className="text-xl font-black text-white">{detailCard.cost}</span>
+               </div>
+            </div>
+            <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-600 leading-tight">
+              {detailCard.name}
+            </h2>
+          </div>
+
+          {/* ステータス (ユニットのみ) */}
+          {detailCard.type === 'unit' && (
+            <div className="flex gap-3">
+              <div className="flex-1 bg-slate-800/50 rounded-lg p-2 border border-slate-700 flex items-center gap-2">
+                 <img src="/images/attack_icon.png" className="w-8 h-8 object-contain" alt="ATK" />
+                 <div>
+                   <div className="text-[9px] text-slate-400 font-bold">ATTACK</div>
+                   <div className="text-2xl font-black text-white leading-none">{detailCard.attack}</div>
+                 </div>
+              </div>
+              <div className="flex-1 bg-slate-800/50 rounded-lg p-2 border border-slate-700 flex items-center gap-2">
+                 <img src="/images/health_icon.png" className="w-8 h-8 object-contain" alt="HP" />
+                 <div>
+                   <div className="text-[9px] text-slate-400 font-bold">HEALTH</div>
+                   <div className="text-2xl font-black text-white leading-none">{detailCard.health}</div>
+                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* 効果テキスト */}
+          <div className="flex-1">
+            <h3 className="text-xs font-bold text-slate-400 mb-1">💎 カード効果</h3>
+            <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/50 text-slate-200 text-sm leading-relaxed min-h-[80px]">
+              {detailCard.description 
+                ? detailCard.description 
+                : <span className="text-slate-600 italic">効果なし</span>
+              }
+            </div>
+          </div>
+
+          {/* フレーバーテキスト */}
+          <div className="text-[10px] text-slate-500 italic text-right border-t border-slate-800 pt-2">
+            {detailCard.flavorText ? `"${detailCard.flavorText}"` : "No flavor text available."}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default CardDetailModal;

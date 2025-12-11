@@ -57,6 +57,21 @@ export default function App() {
   const [detailCard, setDetailCard] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // ★追加！全画面で右クリックメニュー（ブラウザ標準）を完全禁止にする！
+  useEffect(() => {
+    const handleGlobalContextMenu = (e) => {
+      e.preventDefault(); // メニューを出すな！とブラウザに命令
+    };
+    
+    // 画面全体に監視員を配置
+    document.addEventListener('contextmenu', handleGlobalContextMenu);
+
+    // お片付け
+    return () => {
+      document.removeEventListener('contextmenu', handleGlobalContextMenu);
+    };
+  }, []);
+
   const myRole = isHost ? 'host' : 'guest';
   const enemyRole = isHost ? 'guest' : 'host';
   const isMyTurn = gameData && gameData.currentTurn === myRole;

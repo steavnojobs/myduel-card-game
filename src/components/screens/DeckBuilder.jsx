@@ -30,15 +30,29 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
     return { counts, costCurve };
   }, [myDeckIds]);
 
+  // ★共通のソート関数 (IDを受け取って比較)
+  const sortDeckIds = (ids) => {
+    return [...ids].sort((idA, idB) => {
+      const cardA = getCard(idA);
+      const cardB = getCard(idB);
+      // 1. まずコストで比較
+      if (cardA.cost !== cardB.cost) {
+        return cardA.cost - cardB.cost;
+      }
+      // 2. コストが同じならIDで比較
+      return cardA.id - cardB.id;
+    });
+  };
+
   // カードを追加
   const addCard = (card) => {
     if (myDeckIds.length >= DECK_SIZE) return;
     const currentCount = myDeckIds.filter(id => id === card.id).length;
     if (currentCount >= MAX_COPIES) return;
     
-    // コスト順にソートして追加
-    const newDeck = [...myDeckIds, card.id].sort((a, b) => getCard(a).cost - getCard(b).cost);
-    setMyDeckIds(newDeck);
+    // 追加して、即座にソート！
+    const newDeck = [...myDeckIds, card.id];
+    setMyDeckIds(sortDeckIds(newDeck));
   };
 
   // カードを削除
@@ -48,6 +62,18 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
   };
 
   const getCountInDeck = (cardId) => myDeckIds.filter(id => id === cardId).length;
+
+  // ★カードプールの表示用データ (ここで事前にソートしておく！)
+  const sortedCardPool = useMemo(() => {
+    return CARD_DATABASE
+      .filter(c => !c.token && c.id < 900)
+      .sort((a, b) => {
+        // 1. コスト昇順
+        if (a.cost !== b.cost) return a.cost - b.cost;
+        // 2. ID昇順
+        return a.id - b.id;
+      });
+  }, []);
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white font-sans select-none overflow-hidden" onClick={onBackgroundClick}>
@@ -72,25 +98,18 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
             <Trash2 size={16}/> 全削除
           </button>
           
-          {/* ★ここを修正したよ！必ず30枚になるまで回し続けるロジック！★ */}
           <button onClick={() => {
              const randomDeck = [];
-             // まず「デッキに入れていいカード」だけをリストアップ！
              const validCards = CARD_DATABASE.filter(c => !c.token && c.id < 900);
-             
-             // デッキが30枚になるまで無限ループ！
              while (randomDeck.length < DECK_SIZE) {
                const randomCard = validCards[Math.floor(Math.random() * validCards.length)];
-               
-               // すでに3枚入ってるならスキップ！
                const currentCount = randomDeck.filter(id => id === randomCard.id).length;
                if (currentCount < MAX_COPIES) {
                  randomDeck.push(randomCard.id);
                }
              }
-             
-             // 最後にコスト順に並べてセット！
-             setMyDeckIds(randomDeck.sort((a,b) => getCard(a).cost - getCard(b).cost));
+             // ★ここでも共通のソート関数を使う！
+             setMyDeckIds(sortDeckIds(randomDeck));
 
           }} className="flex items-center gap-2 px-4 py-2 text-blue-400 hover:bg-blue-900/30 rounded transition text-sm">
             <RotateCcw size={16}/> おまかせ
@@ -108,15 +127,25 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
       {/* --- メインエリア --- */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* LEFT: カードプール */}
+        {/* LEFT: カードプール (ソート済みリストを使用) */}
         <div className="flex-1 overflow-y-auto p-4 bg-slate-900/50 custom-scrollbar">
           <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 pb-20">
-            {CARD_DATABASE.filter(c => !c.token && c.id < 900).map((card) => {
+            {sortedCardPool.map((card) => {
               const count = getCountInDeck(card.id);
               const isMaxed = count >= MAX_COPIES;
 
               return (
-                <div key={card.id} className="relative group">
+                <div 
+                  key={card.id} 
+                  className="relative group cursor-grab active:cursor-grabbing"
+                  draggable="true"
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("application/json", JSON.stringify(card));
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                >
+                   {/* カード画像もドラッグ無効(draggable=false)にしておく */}
+                   <div className="pointer-events-none absolute inset-0 z-10"></div>
                    <Card 
                      card={card} 
                      location="library" 
@@ -125,6 +154,7 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                      onClick={() => addCard(card)}
                      onContextMenu={(e) => onContextMenu(e, card)}
                    />
+                   
                    {!isMaxed && (
                      <div className="absolute inset-0 bg-blue-500/20 opacity-0 group-hover:opacity-100 transition pointer-events-none rounded-lg border-2 border-blue-400"></div>
                    )}
@@ -202,20 +232,59 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                       className="relative group cursor-pointer aspect-[2/3] transition-transform hover:scale-105 hover:z-10"
                     >
                       <div className="absolute inset-0 rounded overflow-hidden shadow-md">
+                        {/* イラスト */}
                         <img 
                           src={`/images/cards/${card.id}.webp`} 
+                          draggable={false}
                           className="absolute inset-[2.5%] w-[95%] h-[95%] object-cover rounded-sm bg-slate-800"
                           alt={card.name}
                         />
+                        {/* 枠 */}
                         <img 
                           src="/images/frame.png" 
+                          draggable={false}
                           className="absolute inset-0 w-full h-full z-10 pointer-events-none"
                           alt="frame"
                         />
+                        
+                        {/* コストバッジ (左上) */}
                         <div className="absolute top-[2%] left-[2%] w-[25%] aspect-square bg-blue-600 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black text-white shadow-md border border-white/30 z-20">
                           {card.cost}
                         </div>
+
+                        {/* ★追加: ステータス表示 (極小版) ★ */}
+                        {card.type === 'unit' && (
+                          <>
+                            {/* ⚔️ 攻撃力 (左下) */}
+                            <div className="absolute bottom-[3%] left-[3%] w-[24%] aspect-square z-20">
+                              <img 
+                                src="/images/attack_icon.png" 
+                                className="absolute inset-0 w-full h-full object-contain drop-shadow-md"
+                                draggable={false}
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[7px] md:text-[9px] pt-[1px] drop-shadow-md">
+                                {card.attack}
+                              </div>
+                            </div>
+
+                            {/* ♥ 体力 (右下) */}
+                            <div className="absolute bottom-[3%] right-[3%] w-[24%] aspect-square z-20">
+                              <img 
+                                src="/images/health_icon.png" 
+                                className="absolute inset-0 w-full h-full object-contain drop-shadow-md"
+                                draggable={false}
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[7px] md:text-[9px] pt-[1px] drop-shadow-md">
+                                {card.currentHp !== undefined ? card.currentHp : card.health}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        {/* ------------------------------------ */}
+
                       </div>
+                      
+                      {/* 削除ホバーエフェクト */}
                       <div className="absolute inset-0 bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition rounded z-30">
                         <Trash2 size={16} className="text-white" />
                       </div>
