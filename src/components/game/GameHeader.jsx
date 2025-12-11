@@ -5,7 +5,6 @@ const GameHeader = ({ enemy, onFaceClick, isTargetMode }) => {
   if (!enemy) return null;
 
   return (
-    // relative をつけて、中の要素を絶対配置できるようにする！
     <div className="relative h-24 bg-slate-950 border-b border-slate-800 flex items-center px-6 z-20 shadow-md shrink-0 justify-between">
       
       {/* --- 左側：敵のマナ情報 --- */}
@@ -16,29 +15,32 @@ const GameHeader = ({ enemy, onFaceClick, isTargetMode }) => {
          </div>
       </div>
 
-      {/* --- 中央：敵プレイヤーアイコン (攻撃対象) --- */}
-      {/* absolute でど真ん中に固定！ */}
+      {/* --- 中央：敵プレイヤーライフ (ここを大改造！) --- */}
       <div 
         id="enemy-face" 
         className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer transition-all duration-300 ${isTargetMode ? 'scale-110 z-30' : 'z-20'}`}
         onClick={onFaceClick}
       >
-        {/* アイコン本体 (デカくした！) */}
-        <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center shadow-2xl relative overflow-hidden transition-all duration-300 ${isTargetMode ? 'border-red-500 shadow-[0_0_30px_rgba(220,38,38,0.6)] bg-red-900' : 'border-slate-600 bg-slate-800 group-hover:border-slate-400'}`}>
-           <div className="text-4xl">💀</div>
+        {/* アイコン本体 (ドクロを消して、数字をメインに！) */}
+        <div className={`w-24 h-24 rounded-full border-4 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden transition-all duration-300 ${isTargetMode ? 'border-red-500 shadow-[0_0_40px_rgba(220,38,38,0.8)] bg-red-900' : 'border-slate-600 bg-slate-800 hover:border-slate-400'}`}>
            
-           {/* ダメージ受けた時のエフェクト用 (必要ならここに追加) */}
-        </div>
+           {/* ラベル */}
+           <span className={`text-[10px] font-black tracking-widest mb-[-5px] ${isTargetMode ? 'text-red-200' : 'text-slate-400'}`}>ENEMY</span>
+           
+           {/* ライフ数値 */}
+           <div className={`text-6xl font-black font-serif leading-none drop-shadow-lg ${isTargetMode ? 'text-white' : 'text-red-500'}`}>
+             {enemy.hp}
+           </div>
 
-        {/* HPバッジ (アイコンの下に配置) */}
-        <div className="absolute -bottom-3 bg-red-600 px-3 py-1 rounded-full text-sm font-black border-2 border-slate-900 text-white shadow-lg min-w-[3rem] text-center">
-          {enemy.hp}
+           {/* 下部の装飾（HPバー的なもの） */}
+           <div className="absolute bottom-0 left-0 w-full h-1.5 bg-black/30">
+              <div className="h-full bg-red-600 transition-all duration-500" style={{ width: `${(enemy.hp / 20) * 100}%` }}></div>
+           </div>
         </div>
       </div>
 
       {/* --- 右側：敵の手札・デッキ情報 --- */}
       <div className="flex flex-col items-end gap-2 z-10">
-         {/* 手札の枚数を可視化 */}
          <div className="flex -space-x-1">
             {[...Array(Math.min(enemy.hand.length, 10))].map((_, i) => (
                 <div key={i} className="w-5 h-8 bg-slate-700 border border-slate-600 rounded-sm shadow-sm" />
