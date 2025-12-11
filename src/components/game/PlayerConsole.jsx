@@ -1,74 +1,91 @@
 import React from 'react';
-import { Zap } from 'lucide-react';
 import Card from './Card';
-import { getCardBorderColor } from '../../utils/helpers';
+import { Zap, Layers } from 'lucide-react';
 
 const PlayerConsole = ({ 
-    me, 
-    isMyTurn, 
-    turnPhase, 
-    onPlayCard, 
-    onEndTurn, 
-    onContextMenu, 
-    onDragStart, 
-    onDragEnd 
+  me, 
+  isMyTurn, 
+  turnPhase, 
+  onPlayCard, 
+  onEndTurn, 
+  onContextMenu, 
+  onDragStart, 
+  onDragEnd 
 }) => {
-    // プレイ可能な条件: 自分のターン && メインフェーズ
-    const canPlay = isMyTurn && turnPhase === 'main';
+  if (!me) return null;
 
-    return (
-        <div className="w-full bg-slate-800 border-t border-slate-700 p-2 relative pb-safe">
-            {/* 情報バー & ターン終了ボタン */}
-            <div className="flex justify-between items-center mb-2 px-2">
-                <div className="flex items-center gap-3">
-                    {/* 自分のアイコン & HP */}
-                    <div className="w-12 h-12 bg-blue-900 rounded-full flex items-center justify-center border-2 border-blue-500 relative">
-                        <span className="text-xl">😎</span>
-                        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                            {me.hp}
-                        </span>
-                    </div>
-                    {/* 名前 & マナ */}
-                    <div className="flex flex-col">
-                        <div className="text-xs font-bold text-slate-400">YOU</div>
-                        <div className="flex items-center gap-1 text-yellow-400 font-bold text-lg">
-                            <Zap size={16} fill="currentColor" /> {me.mana}/{me.maxMana}
-                        </div>
-                    </div>
-                </div>
+  // 自分のマナ表示
+  const manaPercent = (me.mana / me.maxMana) * 100;
 
-                {/* ターン終了ボタン */}
-                <button 
-                    onClick={onEndTurn} 
-                    disabled={!canPlay} 
-                    className={`px-6 py-2 rounded-full font-bold shadow-lg transition ${
-                        canPlay ? 'bg-green-500 hover:bg-green-400 text-white' : 'bg-slate-700 text-slate-500'
-                    }`}
-                >
-                    ターン終了
-                </button>
-            </div>
-
-            {/* 手札エリア */}
-            <div className="flex justify-center gap-2 overflow-x-auto min-h-[120px] px-2">
-                {me.hand.map((card, i) => (
-                    card && (
-                        <Card 
-                            key={`${card.uid}-${i}`}
-                            card={card}
-                            location="hand"
-                            // マナが足りてて、自分のターンならプレイ可能
-                            isPlayable={canPlay && me.mana >= card.cost}
-                            onClick={() => onPlayCard(card)}
-                            onContextMenu={(e) => onContextMenu(e, card)}
-                            onDragStart={(e) => onDragStart(e, card, 'hand')} 
-                            onDragEnd={onDragEnd}
-                        />
-                    )
-                ))}
-            </div>
+  return (
+    // ★ここ重要！ relative z-20 で、盤面(z-0)より上に表示させる！
+    <div className="relative z-20 h-48 md:h-56 w-full bg-slate-950 border-t-4 border-slate-800 flex items-end justify-between px-4 pb-4 select-none shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+      
+      {/* --- 左側：マナ情報 --- */}
+      <div className="w-24 md:w-32 mb-2 flex flex-col items-center gap-2 z-10">
+        <div className="text-blue-400 font-bold text-xl md:text-2xl flex items-center gap-2 shadow-black drop-shadow-md">
+           <Zap size={24} fill="currentColor" />
+           {me.mana}/{me.maxMana}
         </div>
-    );
+        {/* マナバー */}
+        <div className="w-full h-4 bg-slate-900 rounded-full border border-slate-700 overflow-hidden relative">
+          <div 
+            className="h-full bg-blue-600 transition-all duration-500 shadow-[0_0_10px_#2563eb]" 
+            style={{ width: `${manaPercent}%` }}
+          ></div>
+        </div>
+      </div>
+
+      {/* --- 中央：手札エリア (ここが主役！) --- */}
+      {/* ★修正ポイント: 
+          1. z-50 をつけて、左右のパーツより手前に出す！
+          2. w-full と max-w-4xl で、画面が広くても狭くても中央に配置！
+          3. -mb-4 とかで少し下に埋めて、カードの下半分を隠す演出もアリ（今回は標準配置）
+      */}
+      <div className="flex-1 flex justify-center items-end px-4 z-50 h-full pb-2">
+        <div className="flex justify-center items-end -space-x-4 md:-space-x-6 hover:-space-x-2 transition-all duration-300 w-full max-w-5xl h-full">
+          {me.hand.map((card, index) => (
+            <div 
+              key={card.uid} 
+              className="relative group transition-all duration-300 hover:z-50 hover:-translate-y-8" // hover時にガッツリ上に上げる！
+            >
+              <Card 
+                card={card}
+                location="hand"
+                isPlayable={isMyTurn && me.mana >= card.cost && turnPhase === 'main'}
+                onClick={() => isMyTurn && me.mana >= card.cost && turnPhase === 'main' && onPlayCard(card)}
+                onContextMenu={(e) => onContextMenu(e, card)}
+                onDragStart={(e) => onDragStart(e, card, 'hand')}
+                onDragEnd={onDragEnd}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* --- 右側：ターン終了ボタン --- */}
+      <div className="w-24 md:w-32 mb-2 flex flex-col items-center gap-2 z-10">
+        <div className="text-slate-500 font-bold text-xs mb-1 flex items-center gap-1">
+          <Layers size={14}/>
+          DECK: {me.deck.length}
+        </div>
+        
+        <button 
+          onClick={onEndTurn}
+          disabled={!isMyTurn}
+          className={`
+            w-full py-4 rounded-xl font-black text-white shadow-lg border-b-4 active:border-b-0 active:translate-y-1 transition-all
+            ${isMyTurn 
+              ? 'bg-green-500 border-green-700 hover:bg-green-400 hover:shadow-green-500/50 cursor-pointer' 
+              : 'bg-slate-700 border-slate-800 text-slate-500 cursor-not-allowed'}
+          `}
+        >
+          {isMyTurn ? 'ターン終了' : '相手番'}
+        </button>
+      </div>
+
+    </div>
+  );
 };
 
 export default PlayerConsole;

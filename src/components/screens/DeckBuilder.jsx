@@ -1,156 +1,233 @@
-import React, { useState } from 'react';
-import { RotateCcw, Trash2, Save, CheckCircle, Minus } from 'lucide-react';
-import Card from '../game/Card';
-import { CARD_DATABASE } from '../../data/cards';
-import { DECK_SIZE, MAX_COPIES_IN_DECK } from '../../data/rules';
+import React, { useMemo } from 'react';
+import { ArrowLeft, Save, Trash2, RotateCcw } from 'lucide-react';
+import { CARD_DATABASE } from '../../data/cards'; 
 import { getCard } from '../../utils/helpers';
+import Card from '../game/Card';
 
-// ★ onContextMenu を受け取るように変更！
-const DeckBuilder = ({ myDeckIds, setMyDeckIds, onBack, onContextMenu, onBackgroundClick }) => {    
-    const [saveMessage, setSaveMessage] = useState("");
-    const [isDragging, setIsDragging] = useState(false);
+// 定数
+const DECK_SIZE = 30;
+const MAX_COPIES = 3;
 
-    // --- デッキ操作ロジック ---
-    const addCardToDeck = (cardId) => {
-        if (myDeckIds.length < DECK_SIZE) {
-            const count = myDeckIds.filter(id => id === cardId).length;
-            if (count < MAX_COPIES_IN_DECK) {
-                setMyDeckIds([...myDeckIds, cardId]);
-            }
-        }
-    };
+export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContextMenu, onBackgroundClick }) {
 
-    const removeCardFromDeck = (cardId) => {
-        const idx = myDeckIds.indexOf(cardId);
-        if (idx > -1) {
-            const newDeck = [...myDeckIds];
-            newDeck.splice(idx, 1);
-            setMyDeckIds(newDeck);
-        }
-    };
-
-    const saveDeckManual = () => {
-        localStorage.setItem('my_duel_deck', JSON.stringify(myDeckIds));
-        setSaveMessage("保存しました！");
-        setTimeout(() => setSaveMessage(""), 2000);
-    };
-
-    const clearDeck = () => {
-        setMyDeckIds([]);
-        setSaveMessage("デッキを空にしました！");
-        setTimeout(() => setSaveMessage(""), 2000);
-    };
-
-    const resetDeck = () => {
-        const validCards = CARD_DATABASE.filter(c => !c.token);
-        const defaultDeck = [];
-        for(let i=0; i<DECK_SIZE; i++) {
-            defaultDeck.push(validCards[i % validCards.length].id);
-        }
-        setMyDeckIds(defaultDeck);
-        setSaveMessage("初期デッキに戻しました！");
-        setTimeout(() => setSaveMessage(""), 2000);
-    };
-
-    // --- DnD Handlers ---
-    const handleDragStart = (e, card, origin) => {
-        setIsDragging(true);
-        e.dataTransfer.setData("application/json", JSON.stringify({ id: card.id, origin }));
-    };
+  // デッキの分析データ
+  const deckAnalysis = useMemo(() => {
+    const counts = { unit: 0, spell: 0, building: 0 };
+    const costCurve = [0, 0, 0, 0, 0, 0, 0, 0]; // 0~7+
     
-    const handleDragOver = (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-    };
+    myDeckIds.forEach(id => {
+      const card = getCard(id);
+      if (!card) return;
+      
+      // タイプカウント
+      if (counts[card.type] !== undefined) counts[card.type]++;
+      
+      // マナカーブ
+      const costIndex = Math.min(card.cost, 7);
+      costCurve[costIndex]++;
+    });
 
-    const handleDrop = (e, target) => {
-        e.preventDefault();
-        setIsDragging(false);
-        try {
-            const data = JSON.parse(e.dataTransfer.getData("application/json"));
-            if (target === 'deck' && data.origin === 'library') addCardToDeck(data.id);
-            else if (target === 'library' && data.origin === 'deck') removeCardFromDeck(data.id);
-        } catch (err) {}
-    };
+    return { counts, costCurve };
+  }, [myDeckIds]);
 
-    return (
-        <div 
-            className="flex flex-col w-full min-h-screen bg-slate-900 text-white p-4 select-none"
-            onClick={onBackgroundClick} 
-        >
-            {/* ヘッダー */}
-            <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-                <div className="flex items-center gap-4">
-                    <h2 className={`text-2xl font-bold ${myDeckIds.length === DECK_SIZE ? 'text-green-400' : 'text-red-400'}`}>
-                        🛠️ デッキ構築 ({myDeckIds.length}/{DECK_SIZE})
-                    </h2>
-                    <button onClick={resetDeck} className="text-red-400 text-xs hover:underline flex items-center gap-1 ml-4"><RotateCcw size={14}/>初期化</button>
-                    <button onClick={clearDeck} className="text-red-400 text-xs hover:underline flex items-center gap-1"><Trash2 size={14}/>全削除</button>
-                </div>
-                <div className="flex items-center gap-2">
-                    {saveMessage && <span className="text-green-400 text-sm animate-pulse flex items-center gap-1"><CheckCircle size={14}/>{saveMessage}</span>}
-                    <button onClick={saveDeckManual} className="bg-green-600 px-4 py-2 rounded hover:bg-green-500 flex items-center gap-2 font-bold"><Save size={16}/> 保存</button>
-                    <button onClick={onBack} className="bg-slate-700 px-4 py-2 rounded hover:bg-slate-600">戻る</button>
-                </div>
-            </div>
+  // カードを追加
+  const addCard = (card) => {
+    if (myDeckIds.length >= DECK_SIZE) return;
+    const currentCount = myDeckIds.filter(id => id === card.id).length;
+    if (currentCount >= MAX_COPIES) return;
+    
+    // コスト順にソートして追加
+    const newDeck = [...myDeckIds, card.id].sort((a, b) => getCard(a).cost - getCard(b).cost);
+    setMyDeckIds(newDeck);
+  };
 
-            <div className="flex gap-4 h-[calc(100vh-100px)]">
-                {/* 左：カードライブラリ */}
-                {/* ★修正: p-4 を追加して、アイコンが見切れないようにしたよ！ */}
-                <div 
-                    className={`flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 content-start p-4 rounded transition-colors ${isDragging ? 'bg-white/5' : ''}`}
-                    onDragOver={handleDragOver} 
-                    onDrop={(e) => handleDrop(e, 'library')}
-                >
-                    {CARD_DATABASE.filter(c => !c.token).sort((a,b)=>a.cost-b.cost).map(card => {
-                        const countInDeck = myDeckIds.filter(id => id === card.id).length;
-                        return (
-                            <Card 
-                                key={card.id}
-                                card={card}
-                                location="library"
-                                count={countInDeck}
-                                maxCount={MAX_COPIES_IN_DECK}
-                                onClick={() => addCardToDeck(card.id)}
-                                onDragStart={(e) => handleDragStart(e, card, 'library')}
-                                onDragEnd={() => setIsDragging(false)}
-                                onContextMenu={(e) => onContextMenu(e, card)} // ★これを追加！
-                            />
-                        )
-                    })}
-                </div>
+  // カードを削除
+  const removeCard = (indexToRemove) => {
+    const newDeck = myDeckIds.filter((_, index) => index !== indexToRemove);
+    setMyDeckIds(newDeck);
+  };
 
-                {/* 右：現在のデッキ */}
-                <div 
-                    className={`w-1/3 bg-black/30 rounded-lg p-2 overflow-y-auto border border-slate-700 transition-colors ${isDragging ? 'bg-blue-900/20 border-blue-500' : ''}`}
-                    onDragOver={handleDragOver} 
-                    onDrop={(e) => handleDrop(e, 'deck')}
-                >
-                    {[...new Set(myDeckIds)].sort((a,b)=>a-b).map(id => {
-                        const card = getCard(id);
-                        const count = myDeckIds.filter(x => x === id).length;
-                        return (
-                            <div 
-                                key={id} 
-                                draggable={true}
-                                onDragStart={(e) => handleDragStart(e, card, 'deck')}
-                                onDragEnd={() => setIsDragging(false)}
-                                className="flex items-center justify-between bg-slate-800 mb-1 p-2 rounded border border-slate-700 text-sm cursor-grab active:cursor-grabbing hover:bg-slate-700 transition"
-                                onClick={() => removeCardFromDeck(id)}
-                                onContextMenu={(e) => onContextMenu(e, card)} // ★ここも追加！
-                            >
-                                <span>{card.emoji} {card.name}</span>
-                                <div className="flex items-center gap-2">
-                                    <span className="font-bold text-yellow-400">x{count}</span>
-                                    <Minus size={16} className="text-red-400"/>
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
-            </div>
+  const getCountInDeck = (cardId) => myDeckIds.filter(id => id === cardId).length;
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-900 text-white font-sans select-none overflow-hidden" onClick={onBackgroundClick}>
+      
+      {/* --- ヘッダーエリア --- */}
+      <header className="h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 shrink-0 z-20">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="flex items-center gap-2 text-slate-400 hover:text-white transition">
+            <ArrowLeft size={20} /> 戻る
+          </button>
+          <div className="h-8 w-px bg-slate-700 mx-2"></div>
+          <h2 className="text-xl font-bold flex items-center gap-3">
+            🛠️ デッキ構築 
+            <span className={`text-2xl font-black ${myDeckIds.length === DECK_SIZE ? 'text-green-400' : 'text-yellow-400'}`}>
+              {myDeckIds.length} / {DECK_SIZE}
+            </span>
+          </h2>
         </div>
-    );
-};
 
-export default DeckBuilder;
+        <div className="flex gap-4">
+          <button onClick={() => setMyDeckIds([])} className="flex items-center gap-2 px-4 py-2 text-red-400 hover:bg-red-900/30 rounded transition text-sm">
+            <Trash2 size={16}/> 全削除
+          </button>
+          
+          {/* ★ここを修正したよ！必ず30枚になるまで回し続けるロジック！★ */}
+          <button onClick={() => {
+             const randomDeck = [];
+             // まず「デッキに入れていいカード」だけをリストアップ！
+             const validCards = CARD_DATABASE.filter(c => !c.token && c.id < 900);
+             
+             // デッキが30枚になるまで無限ループ！
+             while (randomDeck.length < DECK_SIZE) {
+               const randomCard = validCards[Math.floor(Math.random() * validCards.length)];
+               
+               // すでに3枚入ってるならスキップ！
+               const currentCount = randomDeck.filter(id => id === randomCard.id).length;
+               if (currentCount < MAX_COPIES) {
+                 randomDeck.push(randomCard.id);
+               }
+             }
+             
+             // 最後にコスト順に並べてセット！
+             setMyDeckIds(randomDeck.sort((a,b) => getCard(a).cost - getCard(b).cost));
+
+          }} className="flex items-center gap-2 px-4 py-2 text-blue-400 hover:bg-blue-900/30 rounded transition text-sm">
+            <RotateCcw size={16}/> おまかせ
+          </button>
+
+          <button onClick={() => {
+              localStorage.setItem('my_duel_deck', JSON.stringify(myDeckIds));
+              alert('保存しました！');
+          }} className="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded font-bold shadow-lg transition flex items-center gap-2">
+            <Save size={18}/> 保存
+          </button>
+        </div>
+      </header>
+
+      {/* --- メインエリア --- */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* LEFT: カードプール */}
+        <div className="flex-1 overflow-y-auto p-4 bg-slate-900/50 custom-scrollbar">
+          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 pb-20">
+            {CARD_DATABASE.filter(c => !c.token && c.id < 900).map((card) => {
+              const count = getCountInDeck(card.id);
+              const isMaxed = count >= MAX_COPIES;
+
+              return (
+                <div key={card.id} className="relative group">
+                   <Card 
+                     card={card} 
+                     location="library" 
+                     count={count} 
+                     maxCount={MAX_COPIES}
+                     onClick={() => addCard(card)}
+                     onContextMenu={(e) => onContextMenu(e, card)}
+                   />
+                   {!isMaxed && (
+                     <div className="absolute inset-0 bg-blue-500/20 opacity-0 group-hover:opacity-100 transition pointer-events-none rounded-lg border-2 border-blue-400"></div>
+                   )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* RIGHT: デッキ情報 & リスト */}
+        <div className="w-80 md:w-96 bg-slate-950 border-l border-slate-800 flex flex-col shrink-0 shadow-2xl z-10">
+          
+          {/* 1. マナカーブ (棒グラフ) */}
+          <div className="p-4 border-b border-slate-800 bg-slate-900">
+            <h3 className="text-xs text-slate-400 font-bold mb-2 uppercase tracking-wider">Mana Curve</h3>
+            <div className="flex items-end justify-between h-24 gap-1.5 px-1 pb-1">
+              {deckAnalysis.costCurve.map((count, cost) => {
+                const maxVal = Math.max(...deckAnalysis.costCurve, 1);
+                const heightPercent = count > 0 ? (count / maxVal) * 100 : 0;
+                
+                return (
+                  <div key={cost} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
+                    <div className="w-full h-full bg-slate-800/50 rounded-t-sm relative overflow-hidden flex items-end">
+                       <div 
+                         className="w-full bg-blue-500 hover:bg-blue-400 transition-all duration-500" 
+                         style={{ height: `${heightPercent}%` }}
+                       ></div>
+                       {count > 0 && (
+                          <div className="absolute w-full text-center text-[9px] font-bold text-white bottom-1 pointer-events-none shadow-black drop-shadow-md">
+                            {count}
+                          </div>
+                       )}
+                    </div>
+                    <span className={`text-[10px] font-bold ${count > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
+                      {cost === 7 ? '7+' : cost}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. タイプ別カウント */}
+          <div className="flex divide-x divide-slate-800 border-b border-slate-800 bg-slate-900/80 text-xs font-bold text-slate-300">
+             <div className="flex-1 py-2 text-center flex flex-col">
+               <span className="text-[10px] text-slate-500">UNIT</span>
+               <span className="text-yellow-400 text-lg">{deckAnalysis.counts.unit}</span>
+             </div>
+             <div className="flex-1 py-2 text-center flex flex-col">
+               <span className="text-[10px] text-slate-500">SPELL</span>
+               <span className="text-cyan-400 text-lg">{deckAnalysis.counts.spell}</span>
+             </div>
+             <div className="flex-1 py-2 text-center flex flex-col">
+               <span className="text-[10px] text-slate-500">BUILDING</span>
+               <span className="text-orange-400 text-lg">{deckAnalysis.counts.building}</span>
+             </div>
+          </div>
+
+          {/* 3. デッキ内容 (極小カードリスト) */}
+          <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-slate-900/30">
+            {myDeckIds.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2">
+                <div className="text-4xl">🎴</div>
+                <p className="text-sm">カードを選んでね！</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-5 gap-1.5 content-start">
+                {myDeckIds.map((id, index) => {
+                  const card = getCard(id);
+                  return (
+                    <div 
+                      key={`${id}-${index}`} 
+                      onClick={() => removeCard(index)}
+                      onContextMenu={(e) => onContextMenu(e, card)}
+                      className="relative group cursor-pointer aspect-[2/3] transition-transform hover:scale-105 hover:z-10"
+                    >
+                      <div className="absolute inset-0 rounded overflow-hidden shadow-md">
+                        <img 
+                          src={`/images/cards/${card.id}.webp`} 
+                          className="absolute inset-[2.5%] w-[95%] h-[95%] object-cover rounded-sm bg-slate-800"
+                          alt={card.name}
+                        />
+                        <img 
+                          src="/images/frame.png" 
+                          className="absolute inset-0 w-full h-full z-10 pointer-events-none"
+                          alt="frame"
+                        />
+                        <div className="absolute top-[2%] left-[2%] w-[25%] aspect-square bg-blue-600 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black text-white shadow-md border border-white/30 z-20">
+                          {card.cost}
+                        </div>
+                      </div>
+                      <div className="absolute inset-0 bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition rounded z-30">
+                        <Trash2 size={16} className="text-white" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}

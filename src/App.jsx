@@ -671,7 +671,7 @@ export default function App() {
               <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onClick={handleBackgroundClick} onContextMenu={(e) => e.preventDefault()}>
                   
                   {isMyTurn && gameData.turnPhase === 'start_choice' && (
-                      <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center animate-in fade-in duration-300">
+                      <div className="absolute inset-0 bg-black/80 z-[100] flex items-center justify-center animate-in fade-in duration-300">
                           <div className="flex flex-col items-center gap-8">
                               <h2 className="text-4xl font-bold text-white mb-4 animate-bounce">戦略フェーズ</h2>
                               <div className="flex gap-8">
