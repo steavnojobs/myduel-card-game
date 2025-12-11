@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Swords, Users, Copy, Zap, Layers, Play } from 'lucide-react';
+import { Swords, Users, Copy, Zap, Layers } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
@@ -56,17 +56,16 @@ export default function App() {
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [detailCard, setDetailCard] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  
+  // 攻撃アニメーション用のState（座標データも入るよ！）
+  const [attackingState, setAttackingState] = useState(null);
 
-  // ★追加！全画面で右クリックメニュー（ブラウザ標準）を完全禁止にする！
+  // 全画面右クリック禁止
   useEffect(() => {
     const handleGlobalContextMenu = (e) => {
-      e.preventDefault(); // メニューを出すな！とブラウザに命令
+      e.preventDefault(); 
     };
-    
-    // 画面全体に監視員を配置
     document.addEventListener('contextmenu', handleGlobalContextMenu);
-
-    // お片付け
     return () => {
       document.removeEventListener('contextmenu', handleGlobalContextMenu);
     };
@@ -402,6 +401,33 @@ export default function App() {
           }
       }
 
+      // --- 攻撃アニメーションの座標計算！ ---
+      const attackerEl = document.getElementById(`unit-${attacker.uid}`);
+      let targetEl = null;
+      if (targetType === 'unit') {
+          targetEl = document.getElementById(`unit-${targetUid}`);
+      } else if (targetType === 'face') {
+          targetEl = document.getElementById('enemy-face');
+      }
+
+      if (attackerEl && targetEl) {
+          const atkRect = attackerEl.getBoundingClientRect();
+          const tgtRect = targetEl.getBoundingClientRect();
+          // 移動量を計算
+          const deltaX = (tgtRect.left + tgtRect.width / 2) - (atkRect.left + atkRect.width / 2);
+          const deltaY = (tgtRect.top + tgtRect.height / 2) - (atkRect.top + atkRect.height / 2);
+
+          // 状態をセットしてアニメーション開始！
+          setAttackingState({ uid: attacker.uid, x: deltaX, y: deltaY });
+
+          // 0.6秒待機（アニメーション中）
+          await new Promise(resolve => setTimeout(resolve, 600));
+          
+          // アニメーション終了
+          setAttackingState(null);
+      }
+      // -------------------------------------
+
       const roomRef = getRoomRef(roomId);
       let updates = {};
       let actionLog = "";
@@ -479,7 +505,9 @@ export default function App() {
     let updates = {};   
     let effectLogs = [];
     
+    // 現在のボード情報を取得
     updates[`${myRole}.board`] = me.board;
+
     me.board.forEach(card => {
         if (card.type === 'building' && card.turnEnd) {
             const log = processEffect(card.turnEnd, me, gameData[enemyRole], updates, myRole, enemyRole, gameData);
@@ -501,6 +529,10 @@ export default function App() {
     updates.turnPhase = 'start_choice';
     updates.turnCount = gameData.turnCount + 1;
     updates[`${nextTurn}.board`] = nextPlayerBoard;
+
+    // ★ターン終了時に自分のユニットの色を戻す（canAttack:true でカラー表示にする）
+    const finalMyBoard = updates[`${myRole}.board`] || me.board;
+    updates[`${myRole}.board`] = finalMyBoard.map(u => ({ ...u, canAttack: true }));
     
     updates.lastAction = `ターン終了！${effectLogs.join(" ")}`;
     await updateDoc(roomRef, updates);
@@ -685,14 +717,71 @@ export default function App() {
           {view === 'game' && gameData && (
               <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onClick={handleBackgroundClick} onContextMenu={(e) => e.preventDefault()}>
                   
+                  {/* 戦略フェイズ (リッチデザイン版) */}
                   {isMyTurn && gameData.turnPhase === 'start_choice' && (
-                      <div className="absolute inset-0 bg-black/80 z-[100] flex items-center justify-center animate-in fade-in duration-300">
-                          <div className="flex flex-col items-center gap-8">
-                              <h2 className="text-4xl font-bold text-white mb-4 animate-bounce">戦略フェーズ</h2>
-                              <div className="flex gap-8">
-                                  <button onClick={() => resolveStartPhase('mana')} className="group flex flex-col items-center justify-center w-48 h-64 bg-slate-800 border-4 border-blue-500 rounded-xl hover:bg-blue-900 hover:scale-105 transition-all"><Zap size={48} className="text-white"/><div className="text-2xl font-bold mt-2">マナチャージ</div></button>
-                                  <button onClick={() => resolveStartPhase('draw')} className="group flex flex-col items-center justify-center w-48 h-64 bg-slate-800 border-4 border-green-500 rounded-xl hover:bg-green-900 hover:scale-105 transition-all"><Layers size={48} className="text-white"/><div className="text-2xl font-bold mt-2">ドロー強化</div></button>
-                              </div>
+                      <div className="absolute inset-0 bg-black/10 z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
+                          
+                          {/* タイトル */}
+                          <h2 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-12 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] tracking-widest" style={{ fontFamily: 'serif' }}>
+                              STRATEGY PHASE
+                          </h2>
+
+                          <div className="flex gap-12 md:gap-24 items-center">
+                              
+                              {/* 💎 マナチャージ */}
+                              <button 
+                                onClick={() => resolveStartPhase('mana')} 
+                                className="group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 hover:scale-105"
+                              >
+                                <div className="absolute inset-0 rounded-2xl overflow-hidden border-4 border-blue-400/30 group-hover:border-blue-400 group-hover:shadow-[0_0_50px_rgba(59,130,246,0.6)] transition-all bg-slate-900/80">
+                                  <img 
+                                    src="/images/strategy_mana.png" 
+                                    alt="Mana Charge"
+                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        e.target.parentNode.classList.add('bg-gradient-to-br', 'from-blue-900', 'to-slate-900');
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-blue-900/80 via-transparent to-transparent opacity-60"></div>
+                                </div>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+                                   <span className="text-6xl md:text-7xl font-serif font-black text-white drop-shadow-[0_0_10px_rgba(59,130,246,1)] group-hover:animate-pulse">
+                                     
+                                   </span>
+                                   <div className="mt-4 px-4 py-1 bg-black/60 rounded-full border border-blue-400/50 backdrop-blur-md text-blue-200 text-sm font-bold tracking-wider group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                     最大マナ +1
+                                   </div>
+                                </div>
+                              </button>
+
+                              {/* 💰 ドロー強化 */}
+                              <button 
+                                onClick={() => resolveStartPhase('draw')} 
+                                className="group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 hover:scale-105"
+                              >
+                                <div className="absolute inset-0 rounded-2xl overflow-hidden border-4 border-yellow-400/30 group-hover:border-yellow-400 group-hover:shadow-[0_0_50px_rgba(250,204,21,0.6)] transition-all bg-slate-900/80">
+                                  <img 
+                                    src="/images/strategy_draw.png" 
+                                    alt="Draw Card"
+                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        e.target.parentNode.classList.add('bg-gradient-to-br', 'from-yellow-900', 'to-slate-900');
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-yellow-900/80 via-transparent to-transparent opacity-60"></div>
+                                </div>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+                                   <span className="text-6xl md:text-7xl font-serif font-black text-yellow-100 drop-shadow-[0_0_10px_rgba(234,179,8,1)] group-hover:animate-pulse">
+                                     
+                                   </span>
+                                   <div className="mt-4 px-4 py-1 bg-black/60 rounded-full border border-yellow-400/50 backdrop-blur-md text-yellow-200 text-sm font-bold tracking-wider group-hover:bg-yellow-600 group-hover:text-white transition-colors">
+                                     カードを1枚引く
+                                   </div>
+                                </div>
+                              </button>
+
                           </div>
                       </div>
                   )}
@@ -721,6 +810,8 @@ export default function App() {
                           onContextMenu={handleContextMenu}
                           onDrop={handleGameDrop}
                           onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                          // 攻撃アニメーション用のデータを渡す！
+                          attackingState={attackingState}
                       />
                       <PlayerConsole 
                           me={gameData[myRole]}

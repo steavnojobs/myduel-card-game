@@ -6,7 +6,7 @@ const PlayerConsole = ({
   me, 
   isMyTurn, 
   turnPhase, 
-  onPlayCard, 
+  // onPlayCard, // ← クリックプレイ廃止に伴い、ここでの受け取りは不要になったけど、App.jsx側の修正を減らすために残しておいてもエラーにはならないよ！
   onEndTurn, 
   onContextMenu, 
   onDragStart, 
@@ -14,11 +14,9 @@ const PlayerConsole = ({
 }) => {
   if (!me) return null;
 
-  // 自分のマナ表示
   const manaPercent = (me.mana / me.maxMana) * 100;
 
   return (
-    // ★ここ重要！ relative z-20 で、盤面(z-0)より上に表示させる！
     <div className="relative z-20 h-48 md:h-56 w-full bg-slate-950 border-t-4 border-slate-800 flex items-end justify-between px-4 pb-4 select-none shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
       
       {/* --- 左側：マナ情報 --- */}
@@ -27,7 +25,6 @@ const PlayerConsole = ({
            <Zap size={24} fill="currentColor" />
            {me.mana}/{me.maxMana}
         </div>
-        {/* マナバー */}
         <div className="w-full h-4 bg-slate-900 rounded-full border border-slate-700 overflow-hidden relative">
           <div 
             className="h-full bg-blue-600 transition-all duration-500 shadow-[0_0_10px_#2563eb]" 
@@ -36,24 +33,21 @@ const PlayerConsole = ({
         </div>
       </div>
 
-      {/* --- 中央：手札エリア (ここが主役！) --- */}
-      {/* ★修正ポイント: 
-          1. z-50 をつけて、左右のパーツより手前に出す！
-          2. w-full と max-w-4xl で、画面が広くても狭くても中央に配置！
-          3. -mb-4 とかで少し下に埋めて、カードの下半分を隠す演出もアリ（今回は標準配置）
-      */}
+      {/* --- 中央：手札エリア --- */}
       <div className="flex-1 flex justify-center items-end px-4 z-50 h-full pb-2">
         <div className="flex justify-center items-end -space-x-4 md:-space-x-6 hover:-space-x-2 transition-all duration-300 w-full max-w-5xl h-full">
           {me.hand.map((card, index) => (
             <div 
               key={card.uid} 
-              className="relative group transition-all duration-300 hover:z-50 hover:-translate-y-8" // hover時にガッツリ上に上げる！
+              className="relative group transition-all duration-300 hover:z-50 hover:-translate-y-8"
             >
               <Card 
                 card={card}
                 location="hand"
                 isPlayable={isMyTurn && me.mana >= card.cost && turnPhase === 'main'}
-                onClick={() => isMyTurn && me.mana >= card.cost && turnPhase === 'main' && onPlayCard(card)}
+                // ★修正: onClick を削除しました！これでクリックでは出なくなります！
+                // onClick={() => isMyTurn && me.mana >= card.cost && turnPhase === 'main' && onPlayCard(card)} 
+                
                 onContextMenu={(e) => onContextMenu(e, card)}
                 onDragStart={(e) => onDragStart(e, card, 'hand')}
                 onDragEnd={onDragEnd}
