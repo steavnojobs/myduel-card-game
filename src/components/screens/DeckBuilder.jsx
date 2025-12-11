@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ArrowLeft, Save, Trash2, RotateCcw } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ArrowLeft, Save, Trash2, RotateCcw, Swords, Zap, Home, Grid } from 'lucide-react';
 import { CARD_DATABASE } from '../../data/cards'; 
 import { getCard } from '../../utils/helpers';
 import Card from '../game/Card';
@@ -10,6 +10,9 @@ const MAX_COPIES = 3;
 
 export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContextMenu, onBackgroundClick }) {
 
+  // ★追加: 表示するカードの種類を管理するステート
+  const [filterType, setFilterType] = useState('all'); // 'all', 'unit', 'spell', 'building'
+
   // デッキの分析データ
   const deckAnalysis = useMemo(() => {
     const counts = { unit: 0, spell: 0, building: 0 };
@@ -19,10 +22,7 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
       const card = getCard(id);
       if (!card) return;
       
-      // タイプカウント
       if (counts[card.type] !== undefined) counts[card.type]++;
-      
-      // マナカーブ
       const costIndex = Math.min(card.cost, 7);
       costCurve[costIndex]++;
     });
@@ -30,32 +30,25 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
     return { counts, costCurve };
   }, [myDeckIds]);
 
-  // ★共通のソート関数 (IDを受け取って比較)
+  // ソート関数
   const sortDeckIds = (ids) => {
     return [...ids].sort((idA, idB) => {
       const cardA = getCard(idA);
       const cardB = getCard(idB);
-      // 1. まずコストで比較
-      if (cardA.cost !== cardB.cost) {
-        return cardA.cost - cardB.cost;
-      }
-      // 2. コストが同じならIDで比較
+      if (cardA.cost !== cardB.cost) return cardA.cost - cardB.cost;
       return cardA.id - cardB.id;
     });
   };
 
-  // カードを追加
   const addCard = (card) => {
     if (myDeckIds.length >= DECK_SIZE) return;
     const currentCount = myDeckIds.filter(id => id === card.id).length;
     if (currentCount >= MAX_COPIES) return;
     
-    // 追加して、即座にソート！
     const newDeck = [...myDeckIds, card.id];
     setMyDeckIds(sortDeckIds(newDeck));
   };
 
-  // カードを削除
   const removeCard = (indexToRemove) => {
     const newDeck = myDeckIds.filter((_, index) => index !== indexToRemove);
     setMyDeckIds(newDeck);
@@ -63,17 +56,17 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
 
   const getCountInDeck = (cardId) => myDeckIds.filter(id => id === cardId).length;
 
-  // ★カードプールの表示用データ (ここで事前にソートしておく！)
-  const sortedCardPool = useMemo(() => {
+  // ★修正: フィルタリング機能を追加したカードプール
+  const filteredCardPool = useMemo(() => {
     return CARD_DATABASE
       .filter(c => !c.token && c.id < 900)
+      // ★ここでタブに合わせて絞り込み！
+      .filter(c => filterType === 'all' || c.type === filterType)
       .sort((a, b) => {
-        // 1. コスト昇順
         if (a.cost !== b.cost) return a.cost - b.cost;
-        // 2. ID昇順
         return a.id - b.id;
       });
-  }, []);
+  }, [filterType]); // filterTypeが変わるたびに再計算
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white font-sans select-none overflow-hidden" onClick={onBackgroundClick}>
@@ -108,9 +101,7 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                  randomDeck.push(randomCard.id);
                }
              }
-             // ★ここでも共通のソート関数を使う！
              setMyDeckIds(sortDeckIds(randomDeck));
-
           }} className="flex items-center gap-2 px-4 py-2 text-blue-400 hover:bg-blue-900/30 rounded transition text-sm">
             <RotateCcw size={16}/> おまかせ
           </button>
@@ -127,47 +118,82 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
       {/* --- メインエリア --- */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* LEFT: カードプール (ソート済みリストを使用) */}
-        <div className="flex-1 overflow-y-auto p-4 bg-slate-900/50 custom-scrollbar">
-          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 pb-20">
-            {sortedCardPool.map((card) => {
-              const count = getCountInDeck(card.id);
-              const isMaxed = count >= MAX_COPIES;
+        {/* LEFT: カードプール */}
+        <div className="flex-1 flex flex-col min-w-0 bg-slate-900/50">
+          
+          {/* ★追加: カテゴリ切り替えタブ */}
+          <div className="flex items-center gap-2 p-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-20 overflow-x-auto custom-scrollbar">
+             {[
+               { id: 'all', label: 'すべて', icon: Grid, color: 'text-white' },
+               { id: 'unit', label: 'ユニット', icon: Swords, color: 'text-yellow-400' },
+               { id: 'spell', label: 'スペル', icon: Zap, color: 'text-cyan-400' },
+               { id: 'building', label: '建物', icon: Home, color: 'text-orange-400' },
+             ].map(tab => (
+               <button
+                 key={tab.id}
+                 onClick={() => setFilterType(tab.id)}
+                 className={`
+                   flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm transition-all whitespace-nowrap
+                   ${filterType === tab.id 
+                     ? 'bg-slate-700 text-white shadow-lg ring-2 ring-slate-500 scale-105' 
+                     : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}
+                 `}
+               >
+                 <tab.icon size={16} className={filterType === tab.id ? tab.color : ''} />
+                 {tab.label}
+               </button>
+             ))}
+          </div>
 
-              return (
-                <div 
-                  key={card.id} 
-                  className="relative group cursor-grab active:cursor-grabbing"
-                  draggable="true"
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("application/json", JSON.stringify(card));
-                    e.dataTransfer.effectAllowed = "copy";
-                  }}
-                >
-                   {/* カード画像もドラッグ無効(draggable=false)にしておく */}
-                   <div className="pointer-events-none absolute inset-0 z-10"></div>
-                   <Card 
-                     card={card} 
-                     location="library" 
-                     count={count} 
-                     maxCount={MAX_COPIES}
-                     onClick={() => addCard(card)}
-                     onContextMenu={(e) => onContextMenu(e, card)}
-                   />
-                   
-                   {!isMaxed && (
-                     <div className="absolute inset-0 bg-blue-500/20 opacity-0 group-hover:opacity-100 transition pointer-events-none rounded-lg border-2 border-blue-400"></div>
-                   )}
+          {/* カードリスト (フィルタ適用済み) */}
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 pb-20">
+              {filteredCardPool.map((card) => {
+                const count = getCountInDeck(card.id);
+                const isMaxed = count >= MAX_COPIES;
+
+                return (
+                  <div 
+                    key={card.id} 
+                    className="relative group cursor-grab active:cursor-grabbing"
+                    draggable="true"
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/json", JSON.stringify(card));
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                  >
+                     <div className="pointer-events-none absolute inset-0 z-10"></div>
+                     <Card 
+                       card={card} 
+                       location="library" 
+                       count={count} 
+                       maxCount={MAX_COPIES}
+                       onClick={() => addCard(card)}
+                       onContextMenu={(e) => onContextMenu(e, card)}
+                     />
+                     
+                     {!isMaxed && (
+                       <div className="absolute inset-0 bg-blue-500/20 opacity-0 group-hover:opacity-100 transition pointer-events-none rounded-lg border-2 border-blue-400"></div>
+                     )}
+                  </div>
+                );
+              })}
+              
+              {/* カードがない時のメッセージ */}
+              {filteredCardPool.length === 0 && (
+                <div className="col-span-full h-40 flex flex-col items-center justify-center text-slate-500">
+                  <div className="text-4xl mb-2">📦</div>
+                  <p>カードが見つかりません</p>
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
         </div>
 
         {/* RIGHT: デッキ情報 & リスト */}
         <div className="w-80 md:w-96 bg-slate-950 border-l border-slate-800 flex flex-col shrink-0 shadow-2xl z-10">
           
-          {/* 1. マナカーブ (棒グラフ) */}
+          {/* マナカーブ */}
           <div className="p-4 border-b border-slate-800 bg-slate-900">
             <h3 className="text-xs text-slate-400 font-bold mb-2 uppercase tracking-wider">Mana Curve</h3>
             <div className="flex items-end justify-between h-24 gap-1.5 px-1 pb-1">
@@ -197,23 +223,23 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
             </div>
           </div>
 
-          {/* 2. タイプ別カウント */}
+          {/* タイプ別カウント */}
           <div className="flex divide-x divide-slate-800 border-b border-slate-800 bg-slate-900/80 text-xs font-bold text-slate-300">
-             <div className="flex-1 py-2 text-center flex flex-col">
+             <div className={`flex-1 py-2 text-center flex flex-col cursor-pointer hover:bg-slate-800 transition ${filterType === 'unit' ? 'bg-slate-800' : ''}`} onClick={() => setFilterType('unit')}>
                <span className="text-[10px] text-slate-500">UNIT</span>
                <span className="text-yellow-400 text-lg">{deckAnalysis.counts.unit}</span>
              </div>
-             <div className="flex-1 py-2 text-center flex flex-col">
+             <div className={`flex-1 py-2 text-center flex flex-col cursor-pointer hover:bg-slate-800 transition ${filterType === 'spell' ? 'bg-slate-800' : ''}`} onClick={() => setFilterType('spell')}>
                <span className="text-[10px] text-slate-500">SPELL</span>
                <span className="text-cyan-400 text-lg">{deckAnalysis.counts.spell}</span>
              </div>
-             <div className="flex-1 py-2 text-center flex flex-col">
+             <div className={`flex-1 py-2 text-center flex flex-col cursor-pointer hover:bg-slate-800 transition ${filterType === 'building' ? 'bg-slate-800' : ''}`} onClick={() => setFilterType('building')}>
                <span className="text-[10px] text-slate-500">BUILDING</span>
                <span className="text-orange-400 text-lg">{deckAnalysis.counts.building}</span>
              </div>
           </div>
 
-          {/* 3. デッキ内容 (極小カードリスト) */}
+          {/* デッキ内容 (極小カードリスト) */}
           <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-slate-900/30">
             {myDeckIds.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2">
@@ -231,15 +257,13 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                       onContextMenu={(e) => onContextMenu(e, card)}
                       className="relative group cursor-pointer aspect-[2/3] transition-transform hover:scale-105 hover:z-10"
                     >
-                      <div className="absolute inset-0 rounded overflow-hidden shadow-md">
-                        {/* イラスト */}
+                      <div className="absolute inset-0 rounded overflow-hidden shadow-md" style={{ containerType: 'size' }}>
                         <img 
                           src={`/images/cards/${card.id}.webp`} 
                           draggable={false}
                           className="absolute inset-[2.5%] w-[95%] h-[95%] object-cover rounded-sm bg-slate-800"
                           alt={card.name}
                         />
-                        {/* 枠 */}
                         <img 
                           src="/images/frame.png" 
                           draggable={false}
@@ -247,44 +271,23 @@ export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContext
                           alt="frame"
                         />
                         
-                        {/* コストバッジ (左上) */}
-                        <div className="absolute top-[2%] left-[2%] w-[25%] aspect-square bg-blue-600 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black text-white shadow-md border border-white/30 z-20">
-                          {card.cost}
+                        <div className="absolute top-[2%] left-[2%] w-[25%] aspect-square bg-blue-600 rounded-full flex items-center justify-center shadow-md border border-white/30 z-20">
+                          <span className="font-black text-white text-[60cqw]">{card.cost}</span>
                         </div>
 
-                        {/* ★追加: ステータス表示 (極小版) ★ */}
                         {card.type === 'unit' && (
                           <>
-                            {/* ⚔️ 攻撃力 (左下) */}
                             <div className="absolute bottom-[3%] left-[3%] w-[24%] aspect-square z-20">
-                              <img 
-                                src="/images/attack_icon.png" 
-                                className="absolute inset-0 w-full h-full object-contain drop-shadow-md"
-                                draggable={false}
-                              />
-                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[7px] md:text-[9px] pt-[1px] drop-shadow-md">
-                                {card.attack}
-                              </div>
+                              <img src="/images/attack_icon.png" className="absolute inset-0 w-full h-full object-contain drop-shadow-md" draggable={false}/>
+                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[50cqw] pt-[1px] drop-shadow-md">{card.attack}</div>
                             </div>
-
-                            {/* ♥ 体力 (右下) */}
                             <div className="absolute bottom-[3%] right-[3%] w-[24%] aspect-square z-20">
-                              <img 
-                                src="/images/health_icon.png" 
-                                className="absolute inset-0 w-full h-full object-contain drop-shadow-md"
-                                draggable={false}
-                              />
-                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[7px] md:text-[9px] pt-[1px] drop-shadow-md">
-                                {card.currentHp !== undefined ? card.currentHp : card.health}
-                              </div>
+                              <img src="/images/health_icon.png" className="absolute inset-0 w-full h-full object-contain drop-shadow-md" draggable={false}/>
+                              <div className="absolute inset-0 flex items-center justify-center font-black text-white text-[50cqw] pt-[1px] drop-shadow-md">{card.currentHp !== undefined ? card.currentHp : card.health}</div>
                             </div>
                           </>
                         )}
-                        {/* ------------------------------------ */}
-
                       </div>
-                      
-                      {/* 削除ホバーエフェクト */}
                       <div className="absolute inset-0 bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition rounded z-30">
                         <Trash2 size={16} className="text-white" />
                       </div>
