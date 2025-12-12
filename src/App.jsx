@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Swords, Users, Copy, Zap, Layers } from 'lucide-react';
+import { Swords, Users, Copy, Zap, Layers, WifiOff, RefreshCw } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
@@ -15,6 +15,7 @@ import PlayerConsole from './components/game/PlayerConsole';
 import GameSidebar from './components/game/GameSidebar';
 import DeckBuilder from './components/screens/DeckBuilder';
 import Card from './components/game/Card';
+import AimingOverlay from './components/game/AimingOverlay';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -58,15 +59,14 @@ export default function App() {
   const [detailCard, setDetailCard] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   
-  // 攻撃アニメーション用State
   const [attackingState, setAttackingState] = useState(null);
-
-  // プレイ通知用State
   const [notification, setNotification] = useState(null);
   const prevLastActionRef = useRef("");
-  
-  // 直前の攻撃イベントを記憶
   const prevAttackTimestampRef = useRef(0);
+  const [aimingState, setAimingState] = useState(null); 
+  
+  const [lastDataUpdate, setLastDataUpdate] = useState(Date.now());
+  const [isConnectionUnstable, setIsConnectionUnstable] = useState(false);
 
   // 全画面右クリック禁止
   useEffect(() => {
@@ -75,10 +75,168 @@ export default function App() {
     return () => { document.removeEventListener('contextmenu', handleGlobalContextMenu); };
   }, []);
 
+  // エイム中のマウス追従 & ドロップ判定
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (aimingState) {
+        setAimingState(prev => ({ ...prev, currentPos: { x: e.clientX, y: e.clientY } }));
+      }
+    };
+
+    const handleMouseUp = (e) => {
+      if (aimingState) {
+        const element = document.elementFromPoint(e.clientX, e.clientY);
+        const unitTarget = element?.closest('[id^="unit-"]');
+        const faceTarget = element?.closest('#enemy-face');
+
+        if (unitTarget) {
+            const targetUid = unitTarget.id.replace('unit-', '');
+            attack('unit', targetUid, aimingState.attackerUid);
+        } else if (faceTarget) {
+            attack('face', null, aimingState.attackerUid);
+        }
+
+        setAimingState(null);
+      }
+    };
+
+    if (aimingState) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [aimingState]); 
+
+  // タブ復帰時の再接続
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && roomId) {
+        try {
+          const roomRef = getRoomRef(roomId);
+          const snap = await getDoc(roomRef);
+          if (snap.exists()) {
+             setGameData(snap.data()); 
+             setLastDataUpdate(Date.now());
+             setIsConnectionUnstable(false);
+          }
+        } catch (e) {
+          console.error("Re-sync failed:", e);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [roomId]);
+
+  // 通信状況監視
+  useEffect(() => {
+    if (!gameData) return;
+    const timer = setInterval(() => {
+      if (Date.now() - lastDataUpdate > 30000) {
+         setIsConnectionUnstable(true);
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [gameData, lastDataUpdate]);
+
   const myRole = isHost ? 'host' : 'guest';
   const enemyRole = isHost ? 'guest' : 'host';
   const isMyTurn = gameData && gameData.currentTurn === myRole;
 
+  // --- ★ここが心臓部！ 自動フェイズ進行システム ---
+  // --- ★自動フェイズ進行システム (修正版) ---
+  useEffect(() => {
+    if (!gameData || !isMyTurn || !roomId) return;
+
+    const proceedPhase = async () => {
+      const roomRef = getRoomRef(roomId);
+      let updates = {};
+      const me = gameData[myRole];
+      const enemy = gameData[enemyRole];
+
+      // 1. 終了フェイズ処理 (End Effects)
+      // ★修正: ここでは「自分の効果発動」だけ！ 耐久減少はしない！
+      if (gameData.turnPhase === 'end_effect') {
+          console.log("🔄 Processing End Effects...");
+          updates[`${myRole}.board`] = me.board;
+          let effectLogs = [];
+
+          // 自分の建物の効果処理 (防衛塔など)
+          me.board.forEach(card => {
+              if (card.type === 'building' && card.turnEnd) {
+                  const log = processEffect(card.turnEnd, me, enemy, updates, myRole, enemyRole, gameData);
+                  if (log) effectLogs.push(log);
+              }
+          });
+
+          // ★重要: ここでの「相手の耐久減少処理」は削除しました！
+
+          // 自分の行動権を一応回復（見た目用）
+          updates[`${myRole}.board`] = (updates[`${myRole}.board`] || me.board).map(u => ({ ...u, canAttack: true }));
+
+          updates.turnPhase = 'switching';
+          if (effectLogs.length > 0) updates.lastAction = `ターン終了効果: ${effectLogs.join(" ")}`;
+          
+          await updateDoc(roomRef, updates);
+      } 
+      
+      // 2. ターン交代処理 (Switching)
+      else if (gameData.turnPhase === 'switching') {
+          console.log("🔄 Switching Turn...");
+          updates.currentTurn = enemyRole; // 相手にターンを渡す
+          updates.turnPhase = 'start_effect'; // 次は開始フェイズへ
+          updates.turnCount = gameData.turnCount + 1;
+          await updateDoc(roomRef, updates);
+      }
+      
+      // 3. 開始フェイズ処理 (Start Effects)
+      // ★修正: ここで「自分の建物の耐久減少」を行う！
+      else if (gameData.turnPhase === 'start_effect') {
+          console.log("🔄 Processing Start Effects...");
+          
+          // 建物の耐久を減らす & 生存判定 (HP0以下は消滅)
+          // ※この時点で「me」はターンが回ってきたプレイヤーになっている
+          const processedBoard = me.board.map(card => {
+              if (card.type === 'building') {
+                  // 耐久を1減らす
+                  return { ...card, currentHp: card.currentHp - 1 };
+              }
+              return card;
+          }).filter(u => u.currentHp > 0);
+
+          // 行動権の回復もここで確実にやる
+          updates[`${myRole}.board`] = processedBoard.map(u => ({ ...u, canAttack: true }));
+
+          // 将来的に「ターン開始時効果」があればここで processEffect を呼ぶ
+
+          updates.turnPhase = 'strategy';
+          await updateDoc(roomRef, updates);
+      }
+
+      // 4. ドローフェイズ処理 (Draw Phase)
+      else if (gameData.turnPhase === 'draw_phase') {
+          console.log("🔄 Processing Draw Phase...");
+          let newDeck = [...me.deck];
+          let newHand = [...me.hand];
+          const drawResult = handleDraw(newDeck, newHand, me.board, updates, myRole, enemyRole, gameData);
+          
+          updates[`${myRole}.deck`] = drawResult.deck;
+          updates[`${myRole}.hand`] = drawResult.hand;
+          updates.turnPhase = 'main';
+          
+          await updateDoc(roomRef, updates);
+      }
+    };
+
+    proceedPhase();
+  }, [gameData, isMyTurn, roomId, myRole, enemyRole]);
+  // ---------------------------------------------------
+
+  // ... (isDeckValidStrict, getRoomRef, Deck管理系 useEffect はそのまま) ...
   const isDeckValidStrict = (deck) => {
       if (!Array.isArray(deck) || deck.length !== DECK_SIZE) return false;
       const allValid = deck.every(id => getCard(id).id !== 9999);
@@ -99,6 +257,9 @@ export default function App() {
     if (!sId) { sId = generateId(); sessionStorage.setItem('duel_session_id', sId); }
     setUserId(sId);
 
+    const savedRoomId = sessionStorage.getItem('duel_room_id');
+    if (savedRoomId) { setRoomId(savedRoomId); }
+
     const initAuth = async () => { if (auth) await signInAnonymously(auth); };
     initAuth();
 
@@ -110,7 +271,7 @@ export default function App() {
     if (!isDeckInitialized.current) loadDeck();
   }, []);
 
-  // ★データ監視と各種アニメーション発火
+  // データ監視
   useEffect(() => {
     if (!roomId || !userId || !db) return; 
     const roomRef = getRoomRef(roomId);
@@ -118,143 +279,92 @@ export default function App() {
     const unsubscribe = onSnapshot(roomRef, async (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
-            
-            // ★画面更新（＆通知）を行う関数
-            // 攻撃アニメーションの時は、これを遅らせて実行する！
+            setLastDataUpdate(Date.now());
+            setIsConnectionUnstable(false);
+
             const applyGameUpdate = () => {
                 setGameData(data);
                 
-                // 1. プレイ通知 (Play!)
                 if (data.lastAction && data.lastAction !== prevLastActionRef.current) {
                     const match = data.lastAction.match(/^(Host|Guest)が (.+) をプレイ！/);
                     if (match) {
                         const actorName = match[1];
                         const cardName = match[2];
-                        const myRoleName = isHost ? 'Host' : 'Guest';
-                        const side = actorName === myRoleName ? 'right' : 'left';
-                        
-                        let playedCard = CARD_DATABASE.find(c => c.name === cardName);
-                        if (!playedCard && cardName === MANA_COIN.name) playedCard = MANA_COIN;
-                        
+                        const playedCard = CARD_DATABASE.find(c => c.name === cardName) || (cardName === MANA_COIN.name ? MANA_COIN : null);
                         if (playedCard) {
-                            setNotification({ card: playedCard, side: side, key: Date.now() });
+                            setNotification({ card: playedCard, side: actorName === (isHost ? 'Host' : 'Guest') ? 'right' : 'left', key: Date.now() });
                             setTimeout(() => setNotification(null), 1500);
                         }
                     }
                     prevLastActionRef.current = data.lastAction;
                 }
 
-                // ロール設定などの基本処理
                 let role = null;
                 if (data.hostId === userId) role = 'host';
                 else if (data.guestId === userId) role = 'guest';
                 
                 if (role) {
                     setIsHost(role === 'host'); 
-                    if (data.status === 'playing' && view === 'lobby') setView('game');
-                    if (data.status === 'finished' && view === 'game') setView('result');
+                    if (data.status === 'playing' && view !== 'game') setView('game');
+                    if (data.status === 'finished' && view !== 'result') setView('result');
+                    if (data.status === 'waiting' && view !== 'lobby') setView('lobby');
                 }
             };
 
-            // 2. 相手からの攻撃判定 (Attack!)
             if (data.latestAttack && 
                 data.latestAttack.timestamp > prevAttackTimestampRef.current && 
                 data.latestAttack.attackerRole !== myRole) { 
                 
                 const { sourceUid, targetType, targetUid } = data.latestAttack;
-                
-                // ★まだ setGameData してないから、破壊される前の古いDOMが残ってる！
-                // だから「unit-xxxx」が必ず見つかるはず！
                 const attackerEl = document.getElementById(`unit-${sourceUid}`);
-                let targetEl = null;
+                let targetEl = targetType === 'unit' ? document.getElementById(`unit-${targetUid}`) : document.getElementById('my-face');
+                if (!targetEl && targetType === 'unit') targetEl = document.getElementById('my-face');
 
-                if (targetType === 'unit') {
-                    targetEl = document.getElementById(`unit-${targetUid}`); 
-                } else if (targetType === 'face') {
-                    // 相手が顔を狙ったなら、こっちの「自分の顔」がターゲット
-                    targetEl = document.getElementById('my-face'); 
-                }
-
-                // もし万が一ターゲットが見つからない場合（既にない場合）、自分の顔へフォールバック
-                if (!targetEl && targetType === 'unit') {
-                     targetEl = document.getElementById('my-face');
-                }
-
-                // アニメーション再生！
                 if (attackerEl && targetEl) {
                     const atkRect = attackerEl.getBoundingClientRect();
                     const tgtRect = targetEl.getBoundingClientRect();
-                    const deltaX = (tgtRect.left + tgtRect.width / 2) - (atkRect.left + atkRect.width / 2);
-                    const deltaY = (tgtRect.top + tgtRect.height / 2) - (atkRect.top + atkRect.height / 2);
-
-                    setAttackingState({ uid: sourceUid, x: deltaX, y: deltaY });
-                    
-                    // ★ここがポイント！ 0.6秒待ってから、画面を更新（破壊処理）する！
-                    setTimeout(() => {
-                        setAttackingState(null); // アニメーション終了
-                        applyGameUpdate();       // ここで初めてデータ更新！(ユニットが消える)
-                    }, 600);
+                    setAttackingState({ uid: sourceUid, x: (tgtRect.left + tgtRect.width/2) - (atkRect.left + atkRect.width/2), y: (tgtRect.top + tgtRect.height/2) - (atkRect.top + atkRect.height/2) });
+                    setTimeout(() => { setAttackingState(null); applyGameUpdate(); }, 600);
                 } else {
-                    // 要素が見つからないなら即更新
                     applyGameUpdate();
                 }
-                
                 prevAttackTimestampRef.current = data.latestAttack.timestamp;
-
             } else {
-                // 攻撃じゃない時（ドローやプレイなど）は、即座に画面更新！
                 applyGameUpdate();
             }
         }
     });
     return () => unsubscribe();
-  }, [roomId, view, userId, isHost, myRole]); // myRoleも依存配列に追加
+  }, [roomId, view, userId, isHost, myRole]);
 
+  // processEffect, handleDraw, playCard, attack は共通ロジック
   const handleDraw = (currentDeck, currentHand, currentBoard, updates, rolePrefix, latestGameData) => {
       if (currentDeck.length > 0 && currentHand.length < 10) {
           const drawnCard = currentDeck.shift();
           currentHand.push(drawnCard);
-          
-          let triggerLogs = [];
+          // ドロー時トリガー（マナワームなど）
           const newBoard = currentBoard.map(unit => {
               if (unit.onDrawTrigger) {
-                   if (unit.onDrawTrigger.type === 'buff_self_attack') {
-                       triggerLogs.push(`${unit.name}の攻撃力UP！`);
-                       return { ...unit, attack: unit.attack + unit.onDrawTrigger.value };
-                   }
-                   if (unit.onDrawTrigger.type === 'heal_self') {
-                       triggerLogs.push(`${unit.name}が回復！`);
-                       return { ...unit, currentHp: Math.min(unit.currentHp + unit.onDrawTrigger.value, unit.health) };
-                   }
+                   if (unit.onDrawTrigger.type === 'buff_self_attack') return { ...unit, attack: unit.attack + unit.onDrawTrigger.value };
+                   if (unit.onDrawTrigger.type === 'heal_self') return { ...unit, currentHp: Math.min(unit.currentHp + unit.onDrawTrigger.value, unit.health) };
                    if (unit.onDrawTrigger.type === 'heal_face') {
-                       const baseHp = latestGameData?.[rolePrefix]?.hp || INITIAL_HP;
-                       const currentHp = updates[`${rolePrefix}.hp`] !== undefined ? updates[`${rolePrefix}.hp`] : baseHp;
+                       const currentHp = updates[`${rolePrefix}.hp`] !== undefined ? updates[`${rolePrefix}.hp`] : latestGameData[rolePrefix].hp;
                        updates[`${rolePrefix}.hp`] = currentHp + unit.onDrawTrigger.value;
-                       triggerLogs.push(`${unit.name}の効果でリーダー回復！`);
                    }
               }
               return unit;
           });
           updates[`${rolePrefix}.board`] = newBoard; 
-          
-          if (triggerLogs.length > 0) {
-              const prevLog = updates.lastAction || "";
-              updates.lastAction = (prevLog ? prevLog + " " : "") + triggerLogs.join(" ");
-          }
       }
       return { deck: currentDeck, hand: currentHand };
   };
 
   const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefix, latestGameData, sourceUnitUid = null) => {
-      if (!effect) return "";
-      if (!me || !enemy || !latestGameData) return "";
-
+      if (!effect || !me || !enemy || !latestGameData) return "";
       let logMsg = "";
       const currentEnemyBoard = updates[`${enemyPrefix}.board`] || enemy.board;
       const currentMeBoard = updates[`${rolePrefix}.board`] || me.board;
-      let currentDeck = updates[`${rolePrefix}.deck`] || me.deck;
-      let currentHand = updates[`${rolePrefix}.hand`] || me.hand;
-
+      
       switch(effect.type) {
           case 'damage_random': {
               const targets = currentEnemyBoard.filter(u => u.currentHp > 0);
@@ -343,35 +453,29 @@ export default function App() {
               break;
           }
           case 'draw': {
+              // 単純ドロー効果は handleDraw を呼び出す必要あり、ここでは簡易記述
               const count = effect.value;
-              let drawnCount = 0;
-              let tempDeck = [...currentDeck];
-              let tempHand = [...currentHand];
+              let tempDeck = [...(updates[`${rolePrefix}.deck`] || me.deck)];
+              let tempHand = [...(updates[`${rolePrefix}.hand`] || me.hand)];
               let tempBoard = [...currentMeBoard];
               for(let i=0; i<count; i++) {
-                  const deckSizeBefore = tempDeck.length;
                   const res = handleDraw(tempDeck, tempHand, tempBoard, updates, rolePrefix, latestGameData);
                   tempDeck = res.deck;
                   tempHand = res.hand;
-                  if (tempDeck.length < deckSizeBefore) drawnCount++;
-                  if (updates[`${rolePrefix}.board`]) tempBoard = updates[`${rolePrefix}.board`];
               }
               updates[`${rolePrefix}.deck`] = tempDeck;
               updates[`${rolePrefix}.hand`] = tempHand;
-              logMsg = `📚 ${drawnCount}枚ドロー！`;
+              logMsg = `📚 ${count}枚ドロー！`;
               break;
           }
           case 'summon': {
               if (currentMeBoard.length < MAX_BOARD_SIZE) {
-                  // ★修正: === を == に変更して、型が違ってもIDが合えばOKにする！
                   const tokenCard = CARD_DATABASE.find(c => c.id == effect.value);
                   if (tokenCard) {
                       const token = { ...tokenCard, uid: generateId(), canAttack: false, currentHp: tokenCard.health };
                       updates[`${rolePrefix}.board`] = [...currentMeBoard, token];
                       logMsg = `✨ ${token.name}を召喚！`;
                   }
-              } else {
-                  logMsg = `⚠️ 盤面がいっぱいで召喚できない！`;
               }
               break;
           }
@@ -396,9 +500,9 @@ export default function App() {
       return logMsg;
   };
 
+  // プレイカード処理
   const playCard = async (card) => {
-    if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
-    if (!isMyTurn || gameData.turnPhase !== 'main') return;
+    if (!gameData || !isMyTurn || gameData.turnPhase !== 'main') return;
     const me = gameData[myRole];
     const enemy = gameData[enemyRole];
     if (me.mana < card.cost) return;
@@ -414,7 +518,7 @@ export default function App() {
 
     let effectLog = "";
     if (card.type === 'spell') {
-        effectLog = processEffect(card.onPlay, me, enemy, updates, myRole, enemyRole, gameData) || "効果なし";
+        effectLog = processEffect(card.onPlay, me, enemy, updates, myRole, enemyRole, gameData) || "";
     } else {
         const playedCard = { ...card, uid: generateId(), canAttack: !!card.haste, currentHp: card.health };
         updates[`${myRole}.board`] = [...me.board, playedCard];
@@ -456,18 +560,18 @@ export default function App() {
     await updateDoc(roomRef, updates);
   };
 
-  const attack = async (targetType, targetUid = null) => {
-      if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
-
-      if (!isMyTurn || !selectedUnit || gameData.turnPhase !== 'main') return;
+  // 攻撃処理
+  const attack = async (targetType, targetUid = null, attackerUid = null) => {
+      if (!gameData || !isMyTurn || gameData.turnPhase !== 'main') return;
       const me = gameData[myRole];
       const enemy = gameData[enemyRole];
-      const attacker = me.board.find(u => u.uid === selectedUnit);
-      if (!attacker || !attacker.canAttack) { setSelectedUnit(null); return; }
-      if (attacker.type === 'building') return;
+      
+      const attacker = me.board.find(u => u.uid === attackerUid);
+      if (!attacker || !attacker.canAttack || attacker.type === 'building') return;
 
       if (targetType === 'unit') {
           const targetUnit = enemy.board.find(u => u.uid === targetUid);
+          if (!targetUnit) return; 
           if (targetUnit.elusive && !attacker.elusive) return; 
       }
 
@@ -477,42 +581,33 @@ export default function App() {
           if (targetType === 'face') return; 
           if (targetType === 'unit') {
               const targetUnit = enemy.board.find(u => u.uid === targetUid);
-              if (!targetUnit.taunt) return;
+              if (!targetUnit.taunt) return; 
           }
       }
 
-      // --- 攻撃アニメーション (ローカル再生 & DB記録) ---
       const attackerEl = document.getElementById(`unit-${attacker.uid}`);
       let targetEl = null;
-      if (targetType === 'unit') {
-          targetEl = document.getElementById(`unit-${targetUid}`);
-      } else if (targetType === 'face') {
-          targetEl = document.getElementById('enemy-face');
-      }
+      if (targetType === 'unit') targetEl = document.getElementById(`unit-${targetUid}`);
+      else if (targetType === 'face') targetEl = document.getElementById('enemy-face');
 
       if (attackerEl && targetEl) {
           const atkRect = attackerEl.getBoundingClientRect();
           const tgtRect = targetEl.getBoundingClientRect();
-          const deltaX = (tgtRect.left + tgtRect.width / 2) - (atkRect.left + atkRect.width / 2);
-          const deltaY = (tgtRect.top + tgtRect.height / 2) - (atkRect.top + atkRect.height / 2);
-
-          setAttackingState({ uid: attacker.uid, x: deltaX, y: deltaY });
+          setAttackingState({ uid: attacker.uid, x: (tgtRect.left+tgtRect.width/2)-(atkRect.left+atkRect.width/2), y: (tgtRect.top+tgtRect.height/2)-(atkRect.top+atkRect.height/2) });
           await new Promise(resolve => setTimeout(resolve, 600));
           setAttackingState(null);
       }
-      // -----------------------
 
       const roomRef = getRoomRef(roomId);
       let updates = {};
       let actionLog = "";
       let effectLog = "";
 
-      // 攻撃イベントをDBに記録！
       updates.latestAttack = {
           sourceUid: attacker.uid,
           targetType: targetType,
           targetUid: targetUid,
-          attackerRole: myRole, // 誰が攻撃したか
+          attackerRole: myRole, 
           timestamp: Date.now()
       };
 
@@ -532,9 +627,8 @@ export default function App() {
           const target = enemy.board.find(u => u.uid === targetUid);
           if (!target) return;
           
-          const targetDamage = target.attack;
           let newTargetHp = target.currentHp - damage;
-          let newAttackerHp = currentAttacker.currentHp - targetDamage;
+          let newAttackerHp = currentAttacker.currentHp - target.attack;
           if (attacker.bane) newTargetHp = 0;
           if (target.bane) newAttackerHp = 0;
           if (target.type === 'building') newAttackerHp = currentAttacker.currentHp;
@@ -575,110 +669,45 @@ export default function App() {
       }
 
       updates.lastAction = actionLog + effectLog;
-      setSelectedUnit(null);
       await updateDoc(roomRef, updates);
   };
 
+  // ★修正: ターン終了処理は「フェイズを進めるだけ」にする（実際の処理は useEffect でやる）
   const endTurn = async () => {
-    if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
-
-    if (!isMyTurn) return;
+    if (!gameData || !isMyTurn) return;
     const roomRef = getRoomRef(roomId);
-    const me = gameData[myRole];
-    const enemy = gameData[enemyRole]; // 敵データも定義しておく
-    let updates = {};   
-    let effectLogs = [];
-    
-    // --- 1. ターン終了時効果の処理 ---
-    // ここで「兵舎」がトークンを出したり、「防衛塔」がダメージを与えたりして
-    // updates に最新の盤面情報が書き込まれる！
-    me.board.forEach(card => {
-        if (card.type === 'building' && card.turnEnd) {
-            const log = processEffect(card.turnEnd, me, enemy, updates, myRole, enemyRole, gameData);
-            if (log) effectLogs.push(log);
-        }
-    });
-
-    const nextTurn = myRole === 'host' ? 'guest' : 'host';
-    const nextPlayer = gameData[nextTurn]; // これは enemy と同じ
-
-    // --- 2. 相手の盤面更新 (防衛塔などのダメージ反映) ---
-    // ★重要: updatesにある「効果処理後の盤面」を優先して取得！
-    const enemyBoardAfterEffects = updates[`${nextTurn}.board`] || nextPlayer.board;
-
-    // 建物の耐久を減らす & 生存判定
-    let finalNextPlayerBoard = enemyBoardAfterEffects.map(card => {
-        if (card.type === 'building') return { ...card, currentHp: card.currentHp - 1 };
-        return card;
-    }).filter(u => u.currentHp > 0);
-    
-    // 次のターンなので行動権を回復
-    finalNextPlayerBoard = finalNextPlayerBoard.map(u => ({ ...u, canAttack: true }));
-    
-    // --- 3. 自分の盤面更新 (兵舎などの召喚反映) ---
-    // ★重要: ここも updatesにある「効果処理後の盤面」を優先！！
-    // これを忘れると、せっかく召喚したトークンが消えちゃう！
-    const myBoardAfterEffects = updates[`${myRole}.board`] || me.board;
-
-    // 自分はターン終了なので、行動権を一応回復状態にしておく（見た目のため）
-    const finalMyBoard = myBoardAfterEffects.map(u => ({ ...u, canAttack: true }));
-
-
-    // --- 4. データを確定 ---
-    updates.currentTurn = nextTurn;
-    updates.turnPhase = 'start_choice';
-    updates.turnCount = gameData.turnCount + 1;
-    
-    // 計算し直した盤面をセット！
-    updates[`${nextTurn}.board`] = finalNextPlayerBoard;
-    updates[`${myRole}.board`] = finalMyBoard;
-    
-    updates.lastAction = `ターン終了！${effectLogs.join(" ")}`;
-    await updateDoc(roomRef, updates);
+    // 単にフェイズを 'end_effect' に変更するだけ。あとは自動処理に任せる！
+    await updateDoc(roomRef, { turnPhase: 'end_effect' });
   };
 
+  // ★修正: 戦略フェイズの選択処理 (strategy -> draw_phase)
   const resolveStartPhase = async (choice) => {
-    if (!gameData || !gameData[myRole] || !gameData[enemyRole]) return;
-
-    if (!isMyTurn || gameData.turnPhase !== 'start_choice') return;
+    if (!gameData || !isMyTurn || gameData.turnPhase !== 'strategy') return;
     const roomRef = getRoomRef(roomId);
     const me = gameData[myRole];
     let updates = {};
     let choiceLog = "";
 
-    let newDeck = [...me.deck];
-    let newHand = [...me.hand];
-    let currentBoard = [...me.board];
-
-    const drawResult = handleDraw(newDeck, newHand, currentBoard, updates, myRole, enemyRole, gameData);
-    newDeck = drawResult.deck;
-    newHand = drawResult.hand;
-    if (updates[`${myRole}.board`]) currentBoard = updates[`${myRole}.board`];
-
     let newMaxMana = me.maxMana;
     if (choice === 'mana') {
         newMaxMana = Math.min(me.maxMana + 1, MAX_MANA_LIMIT);
         choiceLog = "マナチャージを選択！";
+        updates[`${myRole}.mana`] = newMaxMana; // マナ回復はここで
     } else if (choice === 'draw') {
-        const extraDraw = handleDraw(newDeck, newHand, currentBoard, updates, myRole, enemyRole, gameData);
-        newDeck = extraDraw.deck;
-        newHand = extraDraw.hand;
-        if (updates[`${myRole}.board`]) currentBoard = updates[`${myRole}.board`];
+        updates[`${myRole}.mana`] = newMaxMana; // マナ回復だけ
+        const extraDraw = handleDraw([...me.deck], [...me.hand], me.board, updates, myRole, enemyRole, gameData);
+        updates[`${myRole}.deck`] = extraDraw.deck;
+        updates[`${myRole}.hand`] = extraDraw.hand;
         choiceLog = "追加ドローを選択！";
     }
 
     updates[`${myRole}.maxMana`] = newMaxMana;
-    updates[`${myRole}.mana`] = newMaxMana;
-    updates[`${myRole}.deck`] = newDeck;
-    updates[`${myRole}.hand`] = newHand;
-    updates[`${myRole}.board`] = currentBoard;
-    
-    updates.turnPhase = 'main';
-    const drawLog = updates.lastAction || "";
-    updates.lastAction = `${choiceLog} ${drawLog}`;
+    updates.turnPhase = 'draw_phase'; // 次のフェイズへ
+    updates.lastAction = choiceLog;
     await updateDoc(roomRef, updates);
   };
 
+  // createRoom (初期状態は strategy フェイズ)
   const createRoom = async () => {
     if (!userId) return;
     const currentDeckIds = getDeckForGame();
@@ -689,12 +718,8 @@ export default function App() {
     const firstTurn = Math.random() < 0.5 ? 'host' : 'guest';
     const hostDeck = shuffleDeck(currentDeckIds);
     let hostHand = hostDeck.splice(0, 3);
-    let hostMaxMana = INITIAL_MANA;
     let hostMana = INITIAL_MANA;
-    
-    if (firstTurn !== 'host') {
-        hostHand.push({ ...MANA_COIN, uid: generateId() });
-    }
+    if (firstTurn !== 'host') hostHand.push({ ...MANA_COIN, uid: generateId() });
 
     const initialData = {
         hostId: userId,
@@ -702,12 +727,13 @@ export default function App() {
         status: 'waiting',
         turnCount: 1,
         currentTurn: firstTurn,
-        turnPhase: 'start_choice',
+        turnPhase: 'strategy', // 最初はここから
         lastAction: null,
-        host: { hp: INITIAL_HP, mana: hostMana, maxMana: hostMaxMana, deck: hostDeck, hand: hostHand, board: [], initialDeckSummary: getDeckSummary(currentDeckIds) },
+        host: { hp: INITIAL_HP, mana: hostMana, maxMana: INITIAL_MANA, deck: hostDeck, hand: hostHand, board: [], initialDeckSummary: getDeckSummary(currentDeckIds) },
         guest: { hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, deck: [], hand: [], board: [] }
     };
     await setDoc(roomRef, initialData);
+    sessionStorage.setItem('duel_room_id', newRoomId);
     setRoomId(newRoomId);
     setIsHost(true);
     setView('lobby');
@@ -726,31 +752,38 @@ export default function App() {
         
         const guestDeck = shuffleDeck(currentDeckIds);
         let guestHand = guestDeck.splice(0, 3);
-        let guestMaxMana = INITIAL_MANA;
-        let guestMana = INITIAL_MANA;
-
-        if (data.currentTurn !== 'guest') {
-            guestHand.push({ ...MANA_COIN, uid: generateId() });
-        }
+        if (data.currentTurn !== 'guest') guestHand.push({ ...MANA_COIN, uid: generateId() });
 
         await updateDoc(roomRef, {
             guestId: userId,
             status: 'playing',
             'guest.deck': guestDeck,
             'guest.hand': guestHand,
-            'guest.maxMana': guestMaxMana,
-            'guest.mana': guestMana,
+            'guest.maxMana': INITIAL_MANA,
+            'guest.mana': INITIAL_MANA,
             'guest.initialDeckSummary': getDeckSummary(currentDeckIds)
         });
+        sessionStorage.setItem('duel_room_id', inputRoomId);
         setRoomId(inputRoomId);
         setIsHost(false);
         setView('game');
     } else { alert("部屋が見つかりません"); }
   };
 
+  const handleBoardDragStart = (e, unit) => {
+      if (isMyTurn && gameData.turnPhase === 'main' && unit.canAttack && unit.type !== 'building') {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setAimingState({
+              attackerUid: unit.uid,
+              startPos: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+              currentPos: { x: e.clientX, y: e.clientY }
+          });
+      }
+  };
+
   const handleContextMenu = (e, card) => { e.preventDefault(); setDetailCard(card); };
   const handleBackgroundClick = () => { if (detailCard) setDetailCard(null); };
-  
+
   const handleGameDragStart = (e, card, origin) => { setIsDragging(true); e.dataTransfer.setData("application/json", JSON.stringify({ id: card.id, card: card, origin: origin })); };
   const handleGameDragEnd = () => setIsDragging(false);
   const handleGameDrop = (e, target) => { 
@@ -764,23 +797,30 @@ export default function App() {
   return (
       <ErrorBoundary>
           <CardDetailModal detailCard={detailCard} onClose={() => setDetailCard(null)} />
+          <AimingOverlay startPos={aimingState?.startPos} currentPos={aimingState?.currentPos} />
 
-          {/* プレイカード通知 */}
+          {/* 通信切断警告 */}
+          {isConnectionUnstable && (
+            <div className="fixed top-20 right-4 z-[100] bg-red-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce cursor-pointer" onClick={() => window.location.reload()}>
+              <WifiOff size={20} />
+              <span className="text-xs font-bold">通信不安定！タップして再接続</span>
+              <RefreshCw size={16} />
+            </div>
+          )}
+
           {notification && (
-              <div 
-                key={notification.key} 
-                className={`fixed top-32 z-[100] animate-pop-notification ${notification.side === 'left' ? 'left-20' : 'right-20'}`}
-              >
+              <div key={notification.key} className={`fixed top-32 z-[100] animate-pop-notification ${notification.side === 'left' ? 'left-20' : 'right-20'}`}>
                  <div className="relative transform scale-150 origin-top">
                     <Card card={notification.card} location="detail" />
                  </div>
               </div>
           )}
 
+          {/* メニュー画面、デッキ構築、ロビー画面はそのまま (省略なし) */}
           {view === 'menu' && (
               <div className="flex flex-col items-center justify-center w-full min-h-screen bg-slate-900 text-white font-sans select-none" onClick={handleBackgroundClick}>
                   <h1 className="text-6xl font-bold mb-4 text-blue-400">DUEL CARD GAME</h1>
-                  <p className="mb-8 text-slate-400">Ver 11.0: Visual Update & Bug Fixes ✨</p>
+                  <p className="mb-8 text-slate-400">Ver 12.0: Robust Phase System 🛡️</p>
                   <div className="flex flex-col gap-4 w-64">
                       <button onClick={() => setView('deck')} className="bg-indigo-600 hover:bg-indigo-500 py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2"><Swords size={20}/> デッキ構築</button>
                       <button onClick={() => setView('lobby')} disabled={!isDeckValidStrict(myDeckIds)} className={`w-full py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2 ${isDeckValidStrict(myDeckIds) ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
@@ -819,32 +859,32 @@ export default function App() {
                               {roomId}<button onClick={() => {navigator.clipboard.writeText(roomId)}} className="text-sm bg-slate-700 p-2 rounded hover:bg-slate-600"><Copy size={20}/></button>
                           </div>
                           <p className="animate-pulse text-xl">対戦相手を待っています...</p>
-                          <button onClick={() => {setRoomId(""); setIsHost(false); setGameData(null); setView('menu');}} className="mt-8 text-red-400 underline">キャンセル</button>
+                          <button onClick={() => {
+                              setRoomId(""); 
+                              setIsHost(false); 
+                              setGameData(null); 
+                              sessionStorage.removeItem('duel_room_id');
+                              setView('menu');
+                          }} className="mt-8 text-red-400 underline">キャンセル</button>
                       </div>
                   )}
                </div>
           )}
 
+          {/* ゲーム画面 */}
           {view === 'game' && gameData && (
               <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onClick={handleBackgroundClick} onContextMenu={(e) => e.preventDefault()}>
                   
-                  {isMyTurn && gameData.turnPhase === 'start_choice' && (
+                  {/* 戦略フェイズ (strategy の時だけ表示) */}
+                  {isMyTurn && gameData.turnPhase === 'strategy' && (
                       <div className="absolute inset-0 bg-black/40 z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
-                          
-                          <h2 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-12 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] tracking-widest" style={{ fontFamily: 'serif' }}>
-                              STRATEGY PHASE
-                          </h2>
-
+                          <h2 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-12 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] tracking-widest" style={{ fontFamily: 'serif' }}>STRATEGY PHASE</h2>
                           <div className="flex gap-12 md:gap-24 items-center">
-                              
+                              {/* マナボタン */}
                               {(() => {
                                 const isMaxMana = gameData[myRole].maxMana >= MAX_MANA_LIMIT;
                                 return (
-                                  <button 
-                                    onClick={() => !isMaxMana && resolveStartPhase('mana')} 
-                                    disabled={isMaxMana}
-                                    className={`group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 ${isMaxMana ? 'grayscale cursor-not-allowed opacity-50' : 'hover:scale-105'}`}
-                                  >
+                                  <button onClick={() => !isMaxMana && resolveStartPhase('mana')} disabled={isMaxMana} className={`group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 ${isMaxMana ? 'grayscale cursor-not-allowed opacity-50' : 'hover:scale-105'}`}>
                                     <div className={`absolute inset-0 rounded-2xl overflow-hidden border-4 transition-all bg-slate-900/80 ${isMaxMana ? 'border-slate-600' : 'border-blue-400/30 group-hover:border-blue-400 group-hover:shadow-[0_0_50px_rgba(59,130,246,0.6)]'}`}>
                                       <img src="/images/strategy_mana.png" alt="Mana Charge" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-gradient-to-br', 'from-blue-900', 'to-slate-900'); }} />
                                       <div className="absolute inset-0 bg-gradient-to-t from-blue-900/80 via-transparent to-transparent opacity-60"></div>
@@ -856,7 +896,7 @@ export default function App() {
                                   </button>
                                 );
                               })()}
-
+                              {/* ドローボタン */}
                               <button onClick={() => resolveStartPhase('draw')} className="group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 hover:scale-105">
                                 <div className="absolute inset-0 rounded-2xl overflow-hidden border-4 border-yellow-400/30 group-hover:border-yellow-400 group-hover:shadow-[0_0_50px_rgba(250,204,21,0.6)] transition-all bg-slate-900/80">
                                   <img src="/images/strategy_draw.png" alt="Draw Card" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-gradient-to-br', 'from-yellow-900', 'to-slate-900'); }} />
@@ -867,58 +907,41 @@ export default function App() {
                                    <div className="mt-4 px-4 py-1 bg-black/60 rounded-full border border-yellow-400/50 backdrop-blur-md text-yellow-200 text-sm font-bold tracking-wider group-hover:bg-yellow-600 group-hover:text-white transition-colors">カードを1枚引く</div>
                                 </div>
                               </button>
-
                           </div>
                       </div>
                   )}
 
                   <div className="flex-1 flex flex-col relative">
-                      <GameHeader 
-                          enemy={gameData[enemyRole]} 
-                          onFaceClick={() => selectedUnit && attack('face')}
-                          isTargetMode={!!selectedUnit}
-                      />
+                      <GameHeader enemy={gameData[enemyRole]} onFaceClick={() => selectedUnit && attack('face')} isTargetMode={!!aimingState} />
                       <GameBoard 
-                          myBoard={gameData[myRole].board}
-                          enemyBoard={gameData[enemyRole].board}
-                          isMyTurn={isMyTurn}
-                          turnCount={gameData.turnCount}
-                          lastAction={gameData.lastAction}
-                          selectedUnit={selectedUnit}
-                          isDragging={isDragging}
-                          onCardClick={(unit, owner) => {
-                              if (owner === 'me' && isMyTurn && unit.canAttack) {
-                                  setSelectedUnit(selectedUnit === unit.uid ? null : unit.uid);
-                              } else if (owner === 'enemy' && selectedUnit) {
-                                  attack('unit', unit.uid);
-                              }
-                          }}
-                          onContextMenu={handleContextMenu}
-                          onDrop={handleGameDrop}
+                          myBoard={gameData[myRole].board} enemyBoard={gameData[enemyRole].board}
+                          isMyTurn={isMyTurn} turnCount={gameData.turnCount} lastAction={gameData.lastAction}
+                          selectedUnit={selectedUnit} isDragging={isDragging}
+                          onCardClick={(unit, owner) => {}} onBoardDragStart={handleBoardDragStart}
+                          onContextMenu={handleContextMenu} onDrop={handleGameDrop}
                           onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
                           attackingState={attackingState}
                       />
                       <PlayerConsole 
-                          me={gameData[myRole]}
-                          isMyTurn={isMyTurn}
-                          turnPhase={gameData.turnPhase}
-                          onPlayCard={playCard}
-                          onEndTurn={endTurn}
-                          onContextMenu={handleContextMenu}
-                          onDragStart={handleGameDragStart}
-                          onDragEnd={handleGameDragEnd}
+                          me={gameData[myRole]} isMyTurn={isMyTurn} turnPhase={gameData.turnPhase}
+                          onPlayCard={playCard} onEndTurn={endTurn} onContextMenu={handleContextMenu}
+                          onDragStart={handleGameDragStart} onDragEnd={handleGameDragEnd}
                       />
                   </div>
                   <GameSidebar me={gameData[myRole]} enemy={gameData[enemyRole]} />
               </div>
           )}
 
+          {/* 勝敗画面 */}
           {view === 'result' && (
-              <div className="flex flex-col items-center justify-center w-full min-h-screen bg-black/90 text-white z-50 select-none">
-                  <h1 className={`text-6xl font-bold mb-4 ${gameData?.winner === myRole ? 'text-yellow-400' : 'text-blue-400'}`}>
-                      {gameData?.winner === myRole ? 'YOU WIN!! 🎉' : 'YOU LOSE... 💀'}
+              <div className="fixed inset-0 flex flex-col items-center justify-center bg-black/95 text-white z-[10000] select-none animate-in fade-in duration-1000">
+                  <h1 className={`text-7xl md:text-9xl font-black mb-8 tracking-tighter drop-shadow-[0_0_25px_rgba(255,255,255,0.5)] animate-pulse ${gameData?.winner === myRole ? 'text-yellow-400' : 'text-blue-500 grayscale'}`}>
+                      {gameData?.winner === myRole ? 'VICTORY' : 'DEFEAT'}
                   </h1>
-                  <button onClick={() => {setRoomId(""); setIsHost(false); setGameData(null); setView('menu');}} className="bg-white text-black px-8 py-3 rounded-full font-bold hover:scale-105 transition">タイトルに戻る</button>
+                  <p className="text-2xl text-slate-300 mb-12 font-serif tracking-widest uppercase">{gameData?.winner === myRole ? 'You are the Champion!' : 'Better luck next time...'}</p>
+                  <button onClick={() => { setRoomId(""); setIsHost(false); setGameData(null); sessionStorage.removeItem('duel_room_id'); setView('menu'); }} className="bg-white text-black px-12 py-4 rounded-full font-black text-xl hover:scale-110 hover:shadow-[0_0_30px_rgba(255,255,255,0.8)] transition-all duration-300">
+                      タイトルに戻る
+                  </button>
               </div>
           )}
       </ErrorBoundary>

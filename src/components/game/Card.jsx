@@ -12,6 +12,7 @@ const Card = ({
   count = null,
   maxCount = null,
   onClick,
+  onMouseDown,         // ★追加: ドラッグ攻撃開始用
   onContextMenu,
   onDragStart,
   onDragEnd,
@@ -91,6 +92,7 @@ const Card = ({
       if (isGrayedOut) {
         behaviorStyle += " cursor-default"; 
       } else if (card.type === 'unit' && card.canAttack && !isDying) {
+        // ★修正: ドラッグ攻撃対応のため grab カーソルに変更してもいいけど、とりあえずポインター
         behaviorStyle += " cursor-pointer hover:scale-105 hover:shadow-lg hover:ring-2 hover:ring-yellow-400";
       }
 
@@ -147,6 +149,7 @@ const Card = ({
       className={`${baseStyle} ${sizeStyle} ${behaviorStyle}`}
       style={{ ...customStyle, ...attackStyle }}
       onClick={onClick}
+      onMouseDown={onMouseDown} // ★追加: これでドラッグ開始イベントが発火！
       onContextMenu={onContextMenu}
       draggable={location !== 'board' && (location === 'library' ? (count < maxCount) : isPlayable)}
       onDragStart={onDragStart}

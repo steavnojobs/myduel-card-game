@@ -1,41 +1,53 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Card from './Card';
 
-// ★魔法のフック: 盤面の変化を監視して、削除されたカードを「死亡演出」用に一時的に残す！
 const useVisualBoard = (realBoard) => {
   const [visualBoard, setVisualBoard] = useState(realBoard);
   const prevBoardRef = useRef(realBoard);
 
   useEffect(() => {
-    // 前回の盤面と今回の盤面を比較
     const prevBoard = prevBoardRef.current;
     
-    // 1. 新しい盤面にあるカードはそのまま使う
-    // 2. 「前はいたけど今いない」カードを探し出す（＝破壊されたカード）
+    // 1. 破壊されたカードを探す
     const deadCards = prevBoard.filter(prevCard => 
       !realBoard.find(newCard => newCard.uid === prevCard.uid)
     );
 
     if (deadCards.length > 0) {
-      // 破壊されたカードを「HP:0」「isDying:true」の状態にして、新しい盤面に混ぜる！
-      const dyingCards = deadCards.map(c => ({
-        ...c,
-        currentHp: 0, // HPを0にしてダメージポップアップを誘発
-        isDying: true // 死亡フラグ
-      }));
+      // ★ここが修正ポイント！！
+      // 「生き残り + 死体」を単純に足すんじゃなくて、
+      // 「前の並び順」をベースにして、死んだ場所だけ「幽霊」に置き換える！
+      
+      const mergedBoard = prevBoard.map(prevCard => {
+        // このカードは生きてる？
+        const survivor = realBoard.find(newCard => newCard.uid === prevCard.uid);
+        
+        if (survivor) {
+          // 生きてれば最新の状態を使う
+          return survivor;
+        } else {
+          // 死んでれば、その場で「死亡フラグ」を立てる！ (位置はそのまま！)
+          return { ...prevCard, currentHp: 0, isDying: true };
+        }
+      });
 
-      // 一時的に混ぜて表示
-      setVisualBoard([...realBoard, ...dyingCards]);
+      // さらに、新しく召喚されたカードがあれば末尾に追加 (破壊と召喚が同時の場合など)
+      const newBornCards = realBoard.filter(newCard => 
+        !prevBoard.find(prevCard => prevCard.uid === newCard.uid)
+      );
 
-      // 1秒後に本当に消すタイマー
+      // 合体！
+      setVisualBoard([...mergedBoard, ...newBornCards]);
+
+      // 1秒後に現実（削除済み）に戻す
       const timer = setTimeout(() => {
-        setVisualBoard(realBoard); // 元の（削除済みの）盤面に戻す
+        setVisualBoard(realBoard); 
       }, 1000);
 
       prevBoardRef.current = realBoard;
       return () => clearTimeout(timer);
     } else {
-      // 削除がなければそのまま同期
+      // 誰も死んでなければそのまま同期
       setVisualBoard(realBoard);
       prevBoardRef.current = realBoard;
     }
@@ -44,9 +56,9 @@ const useVisualBoard = (realBoard) => {
   return visualBoard;
 };
 
-const GameBoard = ({ myBoard, enemyBoard, isMyTurn, turnCount, lastAction, selectedUnit, isDragging, onCardClick, onContextMenu, onDrop, onDragOver, attackingState }) => {
+// ★修正: props に onBoardDragStart を追加
+const GameBoard = ({ myBoard, enemyBoard, isMyTurn, turnCount, lastAction, selectedUnit, isDragging, onCardClick, onBoardDragStart, onContextMenu, onDrop, onDragOver, attackingState }) => {
   
-  // ★フックを使って「演出付き盤面」を取得！
   const visualMyBoard = useVisualBoard(myBoard);
   const visualEnemyBoard = useVisualBoard(enemyBoard);
 
@@ -55,7 +67,7 @@ const GameBoard = ({ myBoard, enemyBoard, isMyTurn, turnCount, lastAction, selec
          onDrop={(e) => onDrop(e, 'board')} 
          onDragOver={onDragOver}>
       
-      {/* --- 敵の盤面 (visualEnemyBoard を使う！) --- */}
+      {/* --- 敵の盤面 --- */}
       <div className="flex-1 flex items-center justify-center p-4 border-b border-slate-800/50 bg-black/20">
         <div className="flex gap-4 items-center justify-center flex-wrap w-full max-w-6xl min-h-[12rem]">
           {visualEnemyBoard.map((card) => (
@@ -65,10 +77,10 @@ const GameBoard = ({ myBoard, enemyBoard, isMyTurn, turnCount, lastAction, selec
               location="board"
               isSelected={false}
               isPlayable={false}
-              onClick={() => !card.isDying && onCardClick(card, 'enemy')} // 死んでる時はクリック無効
+              onClick={() => !card.isDying && onCardClick(card, 'enemy')}
               onContextMenu={(e) => onContextMenu(e, card)}
               isAttacking={attackingState?.uid === card.uid ? attackingState : false}
-              isDying={card.isDying} // ★死亡フラグを渡す！
+              isDying={card.isDying}
             />
           ))}
           {visualEnemyBoard.length === 0 && <div className="text-slate-600 font-bold opacity-30 text-2xl tracking-widest">ENEMY AREA</div>}
@@ -88,7 +100,7 @@ const GameBoard = ({ myBoard, enemyBoard, isMyTurn, turnCount, lastAction, selec
         </div>
       </div>
 
-      {/* --- 自分の盤面 (visualMyBoard を使う！) --- */}
+      {/* --- 自分の盤面 --- */}
       <div className={`flex-1 flex items-center justify-center p-4 transition-colors duration-500 ${isMyTurn && isDragging ? 'bg-blue-900/10' : ''}`}>
         <div className="flex gap-4 items-center justify-center flex-wrap w-full max-w-6xl min-h-[12rem]">
           {visualMyBoard.map((card) => (
@@ -99,9 +111,11 @@ const GameBoard = ({ myBoard, enemyBoard, isMyTurn, turnCount, lastAction, selec
               isSelected={selectedUnit === card.uid}
               isPlayable={false}
               onClick={() => !card.isDying && onCardClick(card, 'me')}
+              // ★追加: 自分のカードだけマウスダウンでドラッグ攻撃開始！
+              onMouseDown={(e) => !card.isDying && onBoardDragStart(e, card)}
               onContextMenu={(e) => onContextMenu(e, card)}
               isAttacking={attackingState?.uid === card.uid ? attackingState : false}
-              isDying={card.isDying} // ★死亡フラグを渡す！
+              isDying={card.isDying}
             />
           ))}
           {visualMyBoard.length === 0 && <div className="text-slate-600 font-bold opacity-30 text-2xl tracking-widest">PLAYER AREA</div>}
