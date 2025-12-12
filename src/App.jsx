@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Swords, Users, Copy, Zap, Layers, WifiOff, RefreshCw } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, onSnapshot, updateDoc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 
 import { INITIAL_HP, INITIAL_MANA, MAX_MANA_LIMIT, MAX_BOARD_SIZE, DECK_SIZE, MAX_COPIES_IN_DECK } from './data/rules';
 import { CARD_DATABASE, MANA_COIN } from './data/cards';
@@ -68,14 +68,12 @@ export default function App() {
   const [lastDataUpdate, setLastDataUpdate] = useState(Date.now());
   const [isConnectionUnstable, setIsConnectionUnstable] = useState(false);
 
-  // 全画面右クリック禁止
   useEffect(() => {
     const handleGlobalContextMenu = (e) => { e.preventDefault(); };
     document.addEventListener('contextmenu', handleGlobalContextMenu);
     return () => { document.removeEventListener('contextmenu', handleGlobalContextMenu); };
   }, []);
 
-  // エイム中のマウス追従 & ドロップ判定
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (aimingState) {
@@ -111,7 +109,6 @@ export default function App() {
     };
   }, [aimingState]); 
 
-  // タブ復帰時の再接続
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible' && roomId) {
@@ -132,7 +129,6 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [roomId]);
 
-  // 通信状況監視
   useEffect(() => {
     if (!gameData) return;
     const timer = setInterval(() => {
@@ -147,8 +143,6 @@ export default function App() {
   const enemyRole = isHost ? 'guest' : 'host';
   const isMyTurn = gameData && gameData.currentTurn === myRole;
 
-  // --- ★ここが心臓部！ 自動フェイズ進行システム ---
-  // --- ★自動フェイズ進行システム (修正版) ---
   useEffect(() => {
     if (!gameData || !isMyTurn || !roomId) return;
 
@@ -158,14 +152,11 @@ export default function App() {
       const me = gameData[myRole];
       const enemy = gameData[enemyRole];
 
-      // 1. 終了フェイズ処理 (End Effects)
-      // ★修正: ここでは「自分の効果発動」だけ！ 耐久減少はしない！
       if (gameData.turnPhase === 'end_effect') {
           console.log("🔄 Processing End Effects...");
           updates[`${myRole}.board`] = me.board;
           let effectLogs = [];
 
-          // 自分の建物の効果処理 (防衛塔など)
           me.board.forEach(card => {
               if (card.type === 'building' && card.turnEnd) {
                   const log = processEffect(card.turnEnd, me, enemy, updates, myRole, enemyRole, gameData);
@@ -173,9 +164,6 @@ export default function App() {
               }
           });
 
-          // ★重要: ここでの「相手の耐久減少処理」は削除しました！
-
-          // 自分の行動権を一応回復（見た目用）
           updates[`${myRole}.board`] = (updates[`${myRole}.board`] || me.board).map(u => ({ ...u, canAttack: true }));
 
           updates.turnPhase = 'switching';
@@ -184,45 +172,34 @@ export default function App() {
           await updateDoc(roomRef, updates);
       } 
       
-      // 2. ターン交代処理 (Switching)
       else if (gameData.turnPhase === 'switching') {
           console.log("🔄 Switching Turn...");
-          updates.currentTurn = enemyRole; // 相手にターンを渡す
-          updates.turnPhase = 'start_effect'; // 次は開始フェイズへ
+          updates.currentTurn = enemyRole; 
+          updates.turnPhase = 'start_effect';
           updates.turnCount = gameData.turnCount + 1;
           await updateDoc(roomRef, updates);
       }
       
-      // 3. 開始フェイズ処理 (Start Effects)
-      // ★修正: ここで「自分の建物の耐久減少」を行う！
       else if (gameData.turnPhase === 'start_effect') {
           console.log("🔄 Processing Start Effects...");
           
-          // 建物の耐久を減らす & 生存判定 (HP0以下は消滅)
-          // ※この時点で「me」はターンが回ってきたプレイヤーになっている
           const processedBoard = me.board.map(card => {
               if (card.type === 'building') {
-                  // 耐久を1減らす
                   return { ...card, currentHp: card.currentHp - 1 };
               }
               return card;
           }).filter(u => u.currentHp > 0);
 
-          // 行動権の回復もここで確実にやる
           updates[`${myRole}.board`] = processedBoard.map(u => ({ ...u, canAttack: true }));
-
-          // 将来的に「ターン開始時効果」があればここで processEffect を呼ぶ
-
           updates.turnPhase = 'strategy';
           await updateDoc(roomRef, updates);
       }
 
-      // 4. ドローフェイズ処理 (Draw Phase)
       else if (gameData.turnPhase === 'draw_phase') {
           console.log("🔄 Processing Draw Phase...");
           let newDeck = [...me.deck];
           let newHand = [...me.hand];
-          const drawResult = handleDraw(newDeck, newHand, me.board, updates, myRole, enemyRole, gameData);
+          const drawResult = handleDraw(newDeck, newHand, me.board, updates, myRole, gameData);
           
           updates[`${myRole}.deck`] = drawResult.deck;
           updates[`${myRole}.hand`] = drawResult.hand;
@@ -233,10 +210,8 @@ export default function App() {
     };
 
     proceedPhase();
-  }, [gameData, isMyTurn, roomId, myRole, enemyRole]);
-  // ---------------------------------------------------
+  }, [gameData, isMyTurn, roomId, myRole, enemyRole]); 
 
-  // ... (isDeckValidStrict, getRoomRef, Deck管理系 useEffect はそのまま) ...
   const isDeckValidStrict = (deck) => {
       if (!Array.isArray(deck) || deck.length !== DECK_SIZE) return false;
       const allValid = deck.every(id => getCard(id).id !== 9999);
@@ -271,7 +246,6 @@ export default function App() {
     if (!isDeckInitialized.current) loadDeck();
   }, []);
 
-  // データ監視
   useEffect(() => {
     if (!roomId || !userId || !db) return; 
     const roomRef = getRoomRef(roomId);
@@ -323,7 +297,7 @@ export default function App() {
                 if (attackerEl && targetEl) {
                     const atkRect = attackerEl.getBoundingClientRect();
                     const tgtRect = targetEl.getBoundingClientRect();
-                    setAttackingState({ uid: sourceUid, x: (tgtRect.left + tgtRect.width/2) - (atkRect.left + atkRect.width/2), y: (tgtRect.top + tgtRect.height/2) - (atkRect.top + atkRect.height/2) });
+                    setAttackingState({ uid: sourceUid, x: (tgtRect.left+tgtRect.width/2)-(atkRect.left+atkRect.width/2), y: (tgtRect.top+tgtRect.height/2)-(atkRect.top+atkRect.height/2) });
                     setTimeout(() => { setAttackingState(null); applyGameUpdate(); }, 600);
                 } else {
                     applyGameUpdate();
@@ -337,12 +311,10 @@ export default function App() {
     return () => unsubscribe();
   }, [roomId, view, userId, isHost, myRole]);
 
-  // processEffect, handleDraw, playCard, attack は共通ロジック
   const handleDraw = (currentDeck, currentHand, currentBoard, updates, rolePrefix, latestGameData) => {
       if (currentDeck.length > 0 && currentHand.length < 10) {
           const drawnCard = currentDeck.shift();
           currentHand.push(drawnCard);
-          // ドロー時トリガー（マナワームなど）
           const newBoard = currentBoard.map(unit => {
               if (unit.onDrawTrigger) {
                    if (unit.onDrawTrigger.type === 'buff_self_attack') return { ...unit, attack: unit.attack + unit.onDrawTrigger.value };
@@ -365,6 +337,8 @@ export default function App() {
       const currentEnemyBoard = updates[`${enemyPrefix}.board`] || enemy.board;
       const currentMeBoard = updates[`${rolePrefix}.board`] || me.board;
       
+      const currentHand = updates[`${rolePrefix}.hand`] || me.hand;
+
       switch(effect.type) {
           case 'damage_random': {
               const targets = currentEnemyBoard.filter(u => u.currentHp > 0);
@@ -453,7 +427,6 @@ export default function App() {
               break;
           }
           case 'draw': {
-              // 単純ドロー効果は handleDraw を呼び出す必要あり、ここでは簡易記述
               const count = effect.value;
               let tempDeck = [...(updates[`${rolePrefix}.deck`] || me.deck)];
               let tempHand = [...(updates[`${rolePrefix}.hand`] || me.hand)];
@@ -479,6 +452,23 @@ export default function App() {
               }
               break;
           }
+          case 'generate_card': {
+              const genCard = CARD_DATABASE.find(c => c.id == effect.value);
+              
+              if (genCard) {
+                  // 手札が10枚未満なら追加できる
+                  if (currentHand.length < 10) {
+                      const newCard = { ...genCard, uid: generateId() };
+                      const newHand = [...currentHand, newCard];
+                      updates[`${rolePrefix}.hand`] = newHand;
+                      
+                      logMsg = `🃏 手札に${genCard.name}を加えた！`;
+                  } else {
+                      logMsg = `⚠️ 手札がいっぱいで${genCard.name}が入らない！`;
+                  }
+              }
+              break;
+          }
           case 'summon_multi': {
               const count = effect.count;
               const tokenCard = CARD_DATABASE.find(c => c.id == effect.value);
@@ -500,7 +490,6 @@ export default function App() {
       return logMsg;
   };
 
-  // プレイカード処理
   const playCard = async (card) => {
     if (!gameData || !isMyTurn || gameData.turnPhase !== 'main') return;
     const me = gameData[myRole];
@@ -560,7 +549,6 @@ export default function App() {
     await updateDoc(roomRef, updates);
   };
 
-  // 攻撃処理
   const attack = async (targetType, targetUid = null, attackerUid = null) => {
       if (!gameData || !isMyTurn || gameData.turnPhase !== 'main') return;
       const me = gameData[myRole];
@@ -672,15 +660,12 @@ export default function App() {
       await updateDoc(roomRef, updates);
   };
 
-  // ★修正: ターン終了処理は「フェイズを進めるだけ」にする（実際の処理は useEffect でやる）
   const endTurn = async () => {
     if (!gameData || !isMyTurn) return;
     const roomRef = getRoomRef(roomId);
-    // 単にフェイズを 'end_effect' に変更するだけ。あとは自動処理に任せる！
     await updateDoc(roomRef, { turnPhase: 'end_effect' });
   };
 
-  // ★修正: 戦略フェイズの選択処理 (strategy -> draw_phase)
   const resolveStartPhase = async (choice) => {
     if (!gameData || !isMyTurn || gameData.turnPhase !== 'strategy') return;
     const roomRef = getRoomRef(roomId);
@@ -692,22 +677,65 @@ export default function App() {
     if (choice === 'mana') {
         newMaxMana = Math.min(me.maxMana + 1, MAX_MANA_LIMIT);
         choiceLog = "マナチャージを選択！";
-        updates[`${myRole}.mana`] = newMaxMana; // マナ回復はここで
+        updates[`${myRole}.mana`] = newMaxMana; 
     } else if (choice === 'draw') {
-        updates[`${myRole}.mana`] = newMaxMana; // マナ回復だけ
-        const extraDraw = handleDraw([...me.deck], [...me.hand], me.board, updates, myRole, enemyRole, gameData);
+        updates[`${myRole}.mana`] = newMaxMana; 
+        const extraDraw = handleDraw([...me.deck], [...me.hand], me.board, updates, myRole, gameData);
         updates[`${myRole}.deck`] = extraDraw.deck;
         updates[`${myRole}.hand`] = extraDraw.hand;
         choiceLog = "追加ドローを選択！";
     }
 
     updates[`${myRole}.maxMana`] = newMaxMana;
-    updates.turnPhase = 'draw_phase'; // 次のフェイズへ
+    updates.turnPhase = 'draw_phase'; 
     updates.lastAction = choiceLog;
     await updateDoc(roomRef, updates);
   };
 
-  // createRoom (初期状態は strategy フェイズ)
+  // ★修正: 検索機能強化！ (createdAt と 有効期限チェック)
+  const startRandomMatch = async () => {
+    if (!userId) return;
+    const currentDeckIds = getDeckForGame();
+    if (currentDeckIds.length === 0) return;
+
+    const roomsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
+    const q = query(roomsRef, where("status", "==", "waiting"), limit(10)); 
+
+    try {
+        const querySnapshot = await getDocs(q);
+        let targetRoomId = null;
+        
+        // ★フィルター条件: 15分以内の部屋のみ
+        const EXPIRE_TIME = 15 * 60 * 1000;
+        const now = Date.now();
+
+        for (const docSnap of querySnapshot.docs) {
+            const data = docSnap.data();
+            
+            // 自分以外 かつ 有効期限内(createdAtあり) の部屋を探す
+            if (data.hostId !== userId) {
+                if (data.createdAt && (now - data.createdAt < EXPIRE_TIME)) {
+                    targetRoomId = docSnap.id.replace('room_', '');
+                    break; 
+                }
+            }
+        }
+
+        if (targetRoomId) {
+            console.log("Found room:", targetRoomId);
+            await joinRoom(targetRoomId);
+        } else {
+            console.log("No room found, creating new one...");
+            await createRoom();
+        }
+
+    } catch (error) {
+        console.error("Error finding match:", error);
+        alert("マッチング中にエラーが発生しました");
+    }
+  };
+
+  // ★修正: createdAt を追加！
   const createRoom = async () => {
     if (!userId) return;
     const currentDeckIds = getDeckForGame();
@@ -725,9 +753,10 @@ export default function App() {
         hostId: userId,
         guestId: null,
         status: 'waiting',
+        createdAt: Date.now(), // ★ここ追加！
         turnCount: 1,
         currentTurn: firstTurn,
-        turnPhase: 'strategy', // 最初はここから
+        turnPhase: 'strategy', 
         lastAction: null,
         host: { hp: INITIAL_HP, mana: hostMana, maxMana: INITIAL_MANA, deck: hostDeck, hand: hostHand, board: [], initialDeckSummary: getDeckSummary(currentDeckIds) },
         guest: { hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, deck: [], hand: [], board: [] }
@@ -799,7 +828,6 @@ export default function App() {
           <CardDetailModal detailCard={detailCard} onClose={() => setDetailCard(null)} />
           <AimingOverlay startPos={aimingState?.startPos} currentPos={aimingState?.currentPos} />
 
-          {/* 通信切断警告 */}
           {isConnectionUnstable && (
             <div className="fixed top-20 right-4 z-[100] bg-red-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce cursor-pointer" onClick={() => window.location.reload()}>
               <WifiOff size={20} />
@@ -816,15 +844,24 @@ export default function App() {
               </div>
           )}
 
-          {/* メニュー画面、デッキ構築、ロビー画面はそのまま (省略なし) */}
           {view === 'menu' && (
               <div className="flex flex-col items-center justify-center w-full min-h-screen bg-slate-900 text-white font-sans select-none" onClick={handleBackgroundClick}>
                   <h1 className="text-6xl font-bold mb-4 text-blue-400">DUEL CARD GAME</h1>
-                  <p className="mb-8 text-slate-400">Ver 12.0: Robust Phase System 🛡️</p>
+                  <p className="mb-8 text-slate-400">Ver 13.0: Random Matchmaking 🎲</p>
                   <div className="flex flex-col gap-4 w-64">
                       <button onClick={() => setView('deck')} className="bg-indigo-600 hover:bg-indigo-500 py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2"><Swords size={20}/> デッキ構築</button>
+                      
+                      {/* ランダムマッチボタン */}
+                      <button 
+                        onClick={startRandomMatch} 
+                        disabled={!isDeckValidStrict(myDeckIds)} 
+                        className={`w-full py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2 ${isDeckValidStrict(myDeckIds) ? 'bg-orange-600 hover:bg-orange-500 text-white animate-pulse' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}
+                      >
+                          <Zap size={20}/> ランダムマッチ
+                      </button>
+
                       <button onClick={() => setView('lobby')} disabled={!isDeckValidStrict(myDeckIds)} className={`w-full py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2 ${isDeckValidStrict(myDeckIds) ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
-                          <Users size={20}/> オンライン対戦
+                          <Users size={20}/> 友達と対戦
                       </button>
                   </div>
               </div>
@@ -871,16 +908,13 @@ export default function App() {
                </div>
           )}
 
-          {/* ゲーム画面 */}
           {view === 'game' && gameData && (
               <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onClick={handleBackgroundClick} onContextMenu={(e) => e.preventDefault()}>
                   
-                  {/* 戦略フェイズ (strategy の時だけ表示) */}
                   {isMyTurn && gameData.turnPhase === 'strategy' && (
                       <div className="absolute inset-0 bg-black/40 z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
                           <h2 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-12 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] tracking-widest" style={{ fontFamily: 'serif' }}>STRATEGY PHASE</h2>
                           <div className="flex gap-12 md:gap-24 items-center">
-                              {/* マナボタン */}
                               {(() => {
                                 const isMaxMana = gameData[myRole].maxMana >= MAX_MANA_LIMIT;
                                 return (
@@ -896,7 +930,6 @@ export default function App() {
                                   </button>
                                 );
                               })()}
-                              {/* ドローボタン */}
                               <button onClick={() => resolveStartPhase('draw')} className="group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 hover:scale-105">
                                 <div className="absolute inset-0 rounded-2xl overflow-hidden border-4 border-yellow-400/30 group-hover:border-yellow-400 group-hover:shadow-[0_0_50px_rgba(250,204,21,0.6)] transition-all bg-slate-900/80">
                                   <img src="/images/strategy_draw.png" alt="Draw Card" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-gradient-to-br', 'from-yellow-900', 'to-slate-900'); }} />
@@ -932,7 +965,6 @@ export default function App() {
               </div>
           )}
 
-          {/* 勝敗画面 */}
           {view === 'result' && (
               <div className="fixed inset-0 flex flex-col items-center justify-center bg-black/95 text-white z-[10000] select-none animate-in fade-in duration-1000">
                   <h1 className={`text-7xl md:text-9xl font-black mb-8 tracking-tighter drop-shadow-[0_0_25px_rgba(255,255,255,0.5)] animate-pulse ${gameData?.winner === myRole ? 'text-yellow-400' : 'text-blue-500 grayscale'}`}>

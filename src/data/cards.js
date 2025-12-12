@@ -6,7 +6,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 1,
     "health": 1,
-    "emoji": "💀",
     "description": "",
     "token": true
   },
@@ -17,7 +16,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 1,
     "health": 1,
-    "emoji": "💂",
     "description": "",
     "token": true
   },
@@ -26,11 +24,14 @@ export const CARD_DATABASE = [
     "type": "unit",
     "name": "ドラゴンパピー",
     "cost": 3,
-    "attack": 4,
-    "health": 4,
-    "emoji": "🦖",
-    "description": "",
-    "token": true
+    "attack": 2,
+    "health": 2,
+    "description": "【攻撃時】ランダムな敵1体に1ダメージ",
+    "token": true,
+    "onAttack": {
+      "type": "damage_random",
+      "value": 1
+    }
   },
   {
     "id": 1,
@@ -39,8 +40,11 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 1,
     "health": 2,
-    "emoji": "💧",
-    "description": ""
+    "description": "【破壊時】カードを1枚引く。",
+    "onDeath": {
+      "type": "draw",
+      "value": 1
+    }
   },
   {
     "id": 10,
@@ -49,7 +53,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 2,
     "health": 1,
-    "emoji": "👺",
     "description": ""
   },
   {
@@ -59,7 +62,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 1,
     "health": 1,
-    "emoji": "🐭",
     "description": "【回避】",
     "elusive": true
   },
@@ -70,7 +72,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 1,
     "health": 1,
-    "emoji": "🚁",
     "description": "【速攻】【破壊時】敵リーダーに2ダメージ。",
     "haste": true,
     "onDeath": {
@@ -85,7 +86,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 1,
     "health": 3,
-    "emoji": "🐛",
     "description": "【ドロー時】攻撃力+1。",
     "onDrawTrigger": {
       "type": "buff_self_attack",
@@ -98,8 +98,7 @@ export const CARD_DATABASE = [
     "name": "見習い騎士",
     "cost": 2,
     "attack": 2,
-    "health": 3,
-    "emoji": "⚔️",
+    "health": 2,
     "description": ""
   },
   {
@@ -109,7 +108,6 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 3,
     "health": 1,
-    "emoji": "🐺",
     "description": "【速攻】",
     "haste": true
   },
@@ -120,7 +118,6 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 1,
     "health": 2,
-    "emoji": "👲",
     "description": "【相討ち】",
     "bane": true
   },
@@ -131,7 +128,6 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 1,
     "health": 1,
-    "emoji": "☠️",
     "description": "【破壊時】スケルトン(1/1)を1体出す。",
     "onDeath": {
       "type": "summon",
@@ -145,7 +141,6 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 2,
     "health": 4,
-    "emoji": "🐻",
     "description": "【挑発】",
     "taunt": true
   },
@@ -156,7 +151,6 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 3,
     "health": 2,
-    "emoji": "🦹",
     "description": "【攻撃時】敵リーダーに1ダメージ。",
     "onAttack": {
       "type": "damage_face",
@@ -170,7 +164,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 2,
     "health": 2,
-    "emoji": "🏹",
     "description": "【登場時】ランダムな敵1体に2ダメージ。",
     "onPlay": {
       "type": "damage_random",
@@ -184,7 +177,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 2,
     "health": 4,
-    "emoji": "👼",
     "description": "【登場時】自分のHPを4回復。",
     "onPlay": {
       "type": "heal_face",
@@ -198,7 +190,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 2,
     "health": 2,
-    "emoji": "🧟",
     "description": "【登場時】スケルトン(1/1)を1体出す。",
     "onPlay": {
       "type": "summon",
@@ -212,7 +203,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 3,
     "health": 3,
-    "emoji": "🤺",
     "description": "【ドロー時】自分のHPを1回復。",
     "onDrawTrigger": {
       "type": "heal_face",
@@ -226,7 +216,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 4,
     "health": 2,
-    "emoji": "🥷",
     "description": "【回避】",
     "elusive": true
   },
@@ -237,7 +226,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 3,
     "health": 3,
-    "emoji": "🐂",
     "description": "【攻撃時】攻撃力+1。",
     "onAttack": {
       "type": "buff_self_attack",
@@ -251,7 +239,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 0,
     "health": 2,
-    "emoji": "🎎",
     "description": "【相討ち】【挑発】",
     "bane": true,
     "taunt": true
@@ -261,9 +248,8 @@ export const CARD_DATABASE = [
     "type": "unit",
     "name": "堅牢な盾兵",
     "cost": 4,
-    "attack": 2,
+    "attack": 0,
     "health": 6,
-    "emoji": "🛡️",
     "description": "【挑発】",
     "taunt": true
   },
@@ -274,7 +260,6 @@ export const CARD_DATABASE = [
     "cost": 4,
     "attack": 3,
     "health": 3,
-    "emoji": "💣",
     "description": "【登場時】敵全体に1ダメージ。",
     "onPlay": {
       "type": "damage_all_enemy",
@@ -288,7 +273,6 @@ export const CARD_DATABASE = [
     "cost": 4,
     "attack": 3,
     "health": 4,
-    "emoji": "🧛",
     "description": "【登場時】敵1体に2ダメージ、自分のHPを2回復。",
     "onPlay": {
       "type": "drain",
@@ -302,7 +286,6 @@ export const CARD_DATABASE = [
     "cost": 4,
     "attack": 3,
     "health": 3,
-    "emoji": "🧙‍♀️",
     "description": "【登場時】スライム(1/2)を1体出す。",
     "onPlay": {
       "type": "summon",
@@ -314,9 +297,8 @@ export const CARD_DATABASE = [
     "type": "unit",
     "name": "ドラゴンライダー",
     "cost": 4,
-    "attack": 4,
-    "health": 3,
-    "emoji": "🏇",
+    "attack": 2,
+    "health": 2,
     "description": "【速攻】",
     "haste": true
   },
@@ -326,8 +308,7 @@ export const CARD_DATABASE = [
     "name": "研究者",
     "cost": 4,
     "attack": 2,
-    "health": 4,
-    "emoji": "👨‍🔬",
+    "health": 3,
     "description": "【登場時】カードを1枚引く。",
     "onPlay": {
       "type": "draw",
@@ -339,9 +320,8 @@ export const CARD_DATABASE = [
     "type": "unit",
     "name": "炎の魔導士",
     "cost": 5,
-    "attack": 5,
+    "attack": 4,
     "health": 4,
-    "emoji": "🔥",
     "description": "【登場時】敵プレイヤーに3ダメージ。",
     "onPlay": {
       "type": "damage_face",
@@ -353,9 +333,8 @@ export const CARD_DATABASE = [
     "type": "unit",
     "name": "グリフォン",
     "cost": 5,
-    "attack": 4,
-    "health": 4,
-    "emoji": "🦅",
+    "attack": 3,
+    "health": 3,
     "description": "【速攻】",
     "haste": true
   },
@@ -364,9 +343,8 @@ export const CARD_DATABASE = [
     "type": "unit",
     "name": "城壁の巨人",
     "cost": 6,
-    "attack": 4,
+    "attack": 1,
     "health": 8,
-    "emoji": "🗿",
     "description": "【挑発】",
     "taunt": true
   },
@@ -377,7 +355,6 @@ export const CARD_DATABASE = [
     "cost": 6,
     "attack": 6,
     "health": 5,
-    "emoji": "💀",
     "description": "【相討ち】",
     "bane": true
   },
@@ -386,9 +363,8 @@ export const CARD_DATABASE = [
     "type": "unit",
     "name": "マナの古木",
     "cost": 7,
-    "attack": 5,
+    "attack": 2,
     "health": 10,
-    "emoji": "🌳",
     "description": "【挑発】【ドロー時】このユニットのHPを3回復。",
     "taunt": true,
     "onDrawTrigger": {
@@ -403,8 +379,15 @@ export const CARD_DATABASE = [
     "cost": 8,
     "attack": 8,
     "health": 8,
-    "emoji": "🐲",
-    "description": ""
+    "description": "【攻撃時】マナ+1。【ターン終了時】手札に「ファイアボール」を加える。",
+    "onAttack": {
+      "type": "add_mana",
+      "value": 1
+    },
+    "turnEnd": {
+      "type": "generate_card",
+      "value": 1001
+    }
   },
   {
     "id": 31,
@@ -413,7 +396,6 @@ export const CARD_DATABASE = [
     "cost": 10,
     "attack": 10,
     "health": 10,
-    "emoji": "👿",
     "description": "【登場時】敵全体に5ダメージ。",
     "onPlay": {
       "type": "damage_all_enemy",
@@ -427,8 +409,7 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 0,
     "health": 3,
-    "emoji": "⛲",
-    "description": "【永続】ターン終了時、自分のHPを2回復。",
+    "description": "【ターン終了時】自分のHPを2回復。",
     "turnEnd": {
       "type": "heal_face",
       "value": 2
@@ -441,8 +422,7 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 0,
     "health": 4,
-    "emoji": "🎪",
-    "description": "【永続】ターン終了時、全味方攻撃+1。",
+    "description": "【ターン終了時】全味方攻撃+1。",
     "turnEnd": {
       "type": "buff_all_attack",
       "value": 1
@@ -455,8 +435,7 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 0,
     "health": 4,
-    "emoji": "🔭",
-    "description": "【永続】ターン終了時、カードを1枚引く。",
+    "description": "【ターン終了時】カードを1枚引く。",
     "turnEnd": {
       "type": "draw",
       "value": 1
@@ -469,8 +448,7 @@ export const CARD_DATABASE = [
     "cost": 4,
     "attack": 0,
     "health": 5,
-    "emoji": "🏯",
-    "description": "【永続】ターン終了時、ランダムな敵に1ダメージ。",
+    "description": "【ターン終了時】ランダムな敵1体に1ダメージ。",
     "turnEnd": {
       "type": "damage_random",
       "value": 1
@@ -483,8 +461,7 @@ export const CARD_DATABASE = [
     "cost": 5,
     "attack": 0,
     "health": 4,
-    "emoji": "⛺",
-    "description": "【永続】ターン終了時、兵士(1/1)を2体出す。",
+    "description": "【ターン終了時】兵士(1/1)を2体出す。",
     "turnEnd": {
       "type": "summon_multi",
       "value": 9002,
@@ -498,7 +475,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 0,
     "health": 0,
-    "emoji": "🧪",
     "description": "自分のHPを5回復。",
     "onPlay": {
       "type": "heal_face",
@@ -512,7 +488,6 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 0,
     "health": 0,
-    "emoji": "💉",
     "description": "ランダムな敵1体に1ダメージ。",
     "onPlay": {
       "type": "damage_random",
@@ -526,7 +501,6 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 0,
     "health": 0,
-    "emoji": "☄️",
     "description": "ランダムな敵1体に3ダメージ。",
     "onPlay": {
       "type": "damage_random",
@@ -540,7 +514,6 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 0,
     "health": 0,
-    "emoji": "📣",
     "description": "全味方攻撃+1。",
     "onPlay": {
       "type": "buff_all_attack",
@@ -554,7 +527,6 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 0,
     "health": 0,
-    "emoji": "📚",
     "description": "カードを2枚引く。",
     "onPlay": {
       "type": "draw",
@@ -568,8 +540,7 @@ export const CARD_DATABASE = [
     "cost": 3,
     "attack": 0,
     "health": 0,
-    "emoji": "🥚",
-    "description": "ドラゴンパピー(4/4)を出す。",
+    "description": "ドラゴンパピー(2/2)を1体出す。",
     "onPlay": {
       "type": "summon",
       "value": 9003
@@ -582,7 +553,6 @@ export const CARD_DATABASE = [
     "cost": 4,
     "attack": 0,
     "health": 0,
-    "emoji": "⚡",
     "description": "敵プレイヤーに5ダメージ。",
     "onPlay": {
       "type": "damage_face",
@@ -596,7 +566,6 @@ export const CARD_DATABASE = [
     "cost": 4,
     "attack": 0,
     "health": 0,
-    "emoji": "🎺",
     "description": "兵士(1/1)を2体出す。",
     "onPlay": {
       "type": "summon_multi",
@@ -611,7 +580,6 @@ export const CARD_DATABASE = [
     "cost": 5,
     "attack": 0,
     "health": 0,
-    "emoji": "❄️",
     "description": "敵全体に2ダメージ。",
     "onPlay": {
       "type": "damage_all_enemy",
@@ -625,7 +593,6 @@ export const CARD_DATABASE = [
     "cost": 7,
     "attack": 0,
     "health": 0,
-    "emoji": "🌠",
     "description": "敵全体とプレイヤーに4ダメージ。",
     "onPlay": {
       "type": "damage_all_and_face",
@@ -636,4 +603,6 @@ export const CARD_DATABASE = [
 
 
 
-export const MANA_COIN = { id: 9999, type: 'spell', name: "マナコイン", cost: 0, attack: 0, health: 0, emoji: "🪙", description: "このターンのみマナ+1。", onPlay: { type: 'add_mana', value: 1 } };
+
+
+export const MANA_COIN = { id: 9999, type: 'spell', name: "マナコイン", cost: 0, attack: 0, health: 0, description: "このターンのみマナ+1。", onPlay: { type: 'add_mana', value: 1 } };

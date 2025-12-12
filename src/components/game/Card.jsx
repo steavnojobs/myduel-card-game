@@ -247,7 +247,7 @@ const Card = ({
                 </>
               )}
               {card.type === 'building' && (
-                <div className={`w-full text-center font-bold text-slate-200 ${textShadow} text-[8cqw]`}>
+                <div className={`w-full text-center font-bold text-slate-200 ${textShadow} text-[14cqw]`}>
                    耐久 {card.currentHp !== undefined ? card.currentHp : card.health}
                 </div>
               )}
