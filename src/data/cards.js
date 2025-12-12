@@ -484,10 +484,11 @@ export const CARD_DATABASE = [
     "attack": 0,
     "health": 4,
     "emoji": "⛺",
-    "description": "【永続】ターン終了時、兵士(1/1)を出す。",
+    "description": "【永続】ターン終了時、兵士(1/1)を2体出す。",
     "turnEnd": {
-      "type": "summon",
-      "value": 902
+      "type": "summon_multi",
+      "value": 9002,
+      "count": 2
     }
   },
   {

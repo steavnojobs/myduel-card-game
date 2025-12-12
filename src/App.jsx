@@ -64,6 +64,9 @@ export default function App() {
   // プレイ通知用State
   const [notification, setNotification] = useState(null);
   const prevLastActionRef = useRef("");
+  
+  // 直前の攻撃イベントを記憶
+  const prevAttackTimestampRef = useRef(0);
 
   // 全画面右クリック禁止
   useEffect(() => {
@@ -107,46 +110,105 @@ export default function App() {
     if (!isDeckInitialized.current) loadDeck();
   }, []);
 
+  // ★データ監視と各種アニメーション発火
   useEffect(() => {
     if (!roomId || !userId || !db) return; 
     const roomRef = getRoomRef(roomId);
-    const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+    
+    const unsubscribe = onSnapshot(roomRef, async (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
-            setGameData(data);
             
-            // --- プレイ通知検出 ---
-            if (data.lastAction && data.lastAction !== prevLastActionRef.current) {
-                const match = data.lastAction.match(/^(Host|Guest)が (.+) をプレイ！/);
-                if (match) {
-                    const actorName = match[1];
-                    const cardName = match[2];
-                    const myRoleName = isHost ? 'Host' : 'Guest';
-                    const side = actorName === myRoleName ? 'right' : 'left';
-                    const playedCard = CARD_DATABASE.find(c => c.name === cardName);
-                    
-                    if (playedCard) {
-                        setNotification({ card: playedCard, side: side, key: Date.now() });
-                        setTimeout(() => setNotification(null), 1500);
+            // ★画面更新（＆通知）を行う関数
+            // 攻撃アニメーションの時は、これを遅らせて実行する！
+            const applyGameUpdate = () => {
+                setGameData(data);
+                
+                // 1. プレイ通知 (Play!)
+                if (data.lastAction && data.lastAction !== prevLastActionRef.current) {
+                    const match = data.lastAction.match(/^(Host|Guest)が (.+) をプレイ！/);
+                    if (match) {
+                        const actorName = match[1];
+                        const cardName = match[2];
+                        const myRoleName = isHost ? 'Host' : 'Guest';
+                        const side = actorName === myRoleName ? 'right' : 'left';
+                        
+                        let playedCard = CARD_DATABASE.find(c => c.name === cardName);
+                        if (!playedCard && cardName === MANA_COIN.name) playedCard = MANA_COIN;
+                        
+                        if (playedCard) {
+                            setNotification({ card: playedCard, side: side, key: Date.now() });
+                            setTimeout(() => setNotification(null), 1500);
+                        }
                     }
+                    prevLastActionRef.current = data.lastAction;
                 }
-                prevLastActionRef.current = data.lastAction;
-            }
-            // ---------------------
 
-            let role = null;
-            if (data.hostId === userId) role = 'host';
-            else if (data.guestId === userId) role = 'guest';
-            
-            if (role) {
-                setIsHost(role === 'host'); 
-                if (data.status === 'playing' && view === 'lobby') setView('game');
-                if (data.status === 'finished' && view === 'game') setView('result');
+                // ロール設定などの基本処理
+                let role = null;
+                if (data.hostId === userId) role = 'host';
+                else if (data.guestId === userId) role = 'guest';
+                
+                if (role) {
+                    setIsHost(role === 'host'); 
+                    if (data.status === 'playing' && view === 'lobby') setView('game');
+                    if (data.status === 'finished' && view === 'game') setView('result');
+                }
+            };
+
+            // 2. 相手からの攻撃判定 (Attack!)
+            if (data.latestAttack && 
+                data.latestAttack.timestamp > prevAttackTimestampRef.current && 
+                data.latestAttack.attackerRole !== myRole) { 
+                
+                const { sourceUid, targetType, targetUid } = data.latestAttack;
+                
+                // ★まだ setGameData してないから、破壊される前の古いDOMが残ってる！
+                // だから「unit-xxxx」が必ず見つかるはず！
+                const attackerEl = document.getElementById(`unit-${sourceUid}`);
+                let targetEl = null;
+
+                if (targetType === 'unit') {
+                    targetEl = document.getElementById(`unit-${targetUid}`); 
+                } else if (targetType === 'face') {
+                    // 相手が顔を狙ったなら、こっちの「自分の顔」がターゲット
+                    targetEl = document.getElementById('my-face'); 
+                }
+
+                // もし万が一ターゲットが見つからない場合（既にない場合）、自分の顔へフォールバック
+                if (!targetEl && targetType === 'unit') {
+                     targetEl = document.getElementById('my-face');
+                }
+
+                // アニメーション再生！
+                if (attackerEl && targetEl) {
+                    const atkRect = attackerEl.getBoundingClientRect();
+                    const tgtRect = targetEl.getBoundingClientRect();
+                    const deltaX = (tgtRect.left + tgtRect.width / 2) - (atkRect.left + atkRect.width / 2);
+                    const deltaY = (tgtRect.top + tgtRect.height / 2) - (atkRect.top + atkRect.height / 2);
+
+                    setAttackingState({ uid: sourceUid, x: deltaX, y: deltaY });
+                    
+                    // ★ここがポイント！ 0.6秒待ってから、画面を更新（破壊処理）する！
+                    setTimeout(() => {
+                        setAttackingState(null); // アニメーション終了
+                        applyGameUpdate();       // ここで初めてデータ更新！(ユニットが消える)
+                    }, 600);
+                } else {
+                    // 要素が見つからないなら即更新
+                    applyGameUpdate();
+                }
+                
+                prevAttackTimestampRef.current = data.latestAttack.timestamp;
+
+            } else {
+                // 攻撃じゃない時（ドローやプレイなど）は、即座に画面更新！
+                applyGameUpdate();
             }
         }
     });
     return () => unsubscribe();
-  }, [roomId, view, userId, isHost]);
+  }, [roomId, view, userId, isHost, myRole]); // myRoleも依存配列に追加
 
   const handleDraw = (currentDeck, currentHand, currentBoard, updates, rolePrefix, latestGameData) => {
       if (currentDeck.length > 0 && currentHand.length < 10) {
@@ -301,7 +363,8 @@ export default function App() {
           }
           case 'summon': {
               if (currentMeBoard.length < MAX_BOARD_SIZE) {
-                  const tokenCard = CARD_DATABASE.find(c => c.id === effect.value);
+                  // ★修正: === を == に変更して、型が違ってもIDが合えばOKにする！
+                  const tokenCard = CARD_DATABASE.find(c => c.id == effect.value);
                   if (tokenCard) {
                       const token = { ...tokenCard, uid: generateId(), canAttack: false, currentHp: tokenCard.health };
                       updates[`${rolePrefix}.board`] = [...currentMeBoard, token];
@@ -314,7 +377,7 @@ export default function App() {
           }
           case 'summon_multi': {
               const count = effect.count;
-              const tokenCard = CARD_DATABASE.find(c => c.id === effect.value);
+              const tokenCard = CARD_DATABASE.find(c => c.id == effect.value);
               if (tokenCard) {
                   let newBoard = [...currentMeBoard];
                   let summoned = 0;
@@ -418,7 +481,7 @@ export default function App() {
           }
       }
 
-      // --- 攻撃アニメーション ---
+      // --- 攻撃アニメーション (ローカル再生 & DB記録) ---
       const attackerEl = document.getElementById(`unit-${attacker.uid}`);
       let targetEl = null;
       if (targetType === 'unit') {
@@ -443,6 +506,15 @@ export default function App() {
       let updates = {};
       let actionLog = "";
       let effectLog = "";
+
+      // 攻撃イベントをDBに記録！
+      updates.latestAttack = {
+          sourceUid: attacker.uid,
+          targetType: targetType,
+          targetUid: targetUid,
+          attackerRole: myRole, // 誰が攻撃したか
+          timestamp: Date.now()
+      };
 
       if (attacker.onAttack) {
           const log = processEffect(attacker.onAttack, me, enemy, updates, myRole, enemyRole, gameData, attacker.uid);
@@ -513,34 +585,53 @@ export default function App() {
     if (!isMyTurn) return;
     const roomRef = getRoomRef(roomId);
     const me = gameData[myRole];
+    const enemy = gameData[enemyRole]; // 敵データも定義しておく
     let updates = {};   
     let effectLogs = [];
     
-    updates[`${myRole}.board`] = me.board;
+    // --- 1. ターン終了時効果の処理 ---
+    // ここで「兵舎」がトークンを出したり、「防衛塔」がダメージを与えたりして
+    // updates に最新の盤面情報が書き込まれる！
     me.board.forEach(card => {
         if (card.type === 'building' && card.turnEnd) {
-            const log = processEffect(card.turnEnd, me, gameData[enemyRole], updates, myRole, enemyRole, gameData);
+            const log = processEffect(card.turnEnd, me, enemy, updates, myRole, enemyRole, gameData);
             if (log) effectLogs.push(log);
         }
     });
 
     const nextTurn = myRole === 'host' ? 'guest' : 'host';
-    const nextPlayer = gameData[nextTurn];
-    
-    let nextPlayerBoard = nextPlayer.board.map(card => {
+    const nextPlayer = gameData[nextTurn]; // これは enemy と同じ
+
+    // --- 2. 相手の盤面更新 (防衛塔などのダメージ反映) ---
+    // ★重要: updatesにある「効果処理後の盤面」を優先して取得！
+    const enemyBoardAfterEffects = updates[`${nextTurn}.board`] || nextPlayer.board;
+
+    // 建物の耐久を減らす & 生存判定
+    let finalNextPlayerBoard = enemyBoardAfterEffects.map(card => {
         if (card.type === 'building') return { ...card, currentHp: card.currentHp - 1 };
         return card;
     }).filter(u => u.currentHp > 0);
     
-    nextPlayerBoard = nextPlayerBoard.map(u => ({ ...u, canAttack: true }));
+    // 次のターンなので行動権を回復
+    finalNextPlayerBoard = finalNextPlayerBoard.map(u => ({ ...u, canAttack: true }));
+    
+    // --- 3. 自分の盤面更新 (兵舎などの召喚反映) ---
+    // ★重要: ここも updatesにある「効果処理後の盤面」を優先！！
+    // これを忘れると、せっかく召喚したトークンが消えちゃう！
+    const myBoardAfterEffects = updates[`${myRole}.board`] || me.board;
 
+    // 自分はターン終了なので、行動権を一応回復状態にしておく（見た目のため）
+    const finalMyBoard = myBoardAfterEffects.map(u => ({ ...u, canAttack: true }));
+
+
+    // --- 4. データを確定 ---
     updates.currentTurn = nextTurn;
     updates.turnPhase = 'start_choice';
     updates.turnCount = gameData.turnCount + 1;
-    updates[`${nextTurn}.board`] = nextPlayerBoard;
-
-    const finalMyBoard = updates[`${myRole}.board`] || me.board;
-    updates[`${myRole}.board`] = finalMyBoard.map(u => ({ ...u, canAttack: true }));
+    
+    // 計算し直した盤面をセット！
+    updates[`${nextTurn}.board`] = finalNextPlayerBoard;
+    updates[`${myRole}.board`] = finalMyBoard;
     
     updates.lastAction = `ターン終了！${effectLogs.join(" ")}`;
     await updateDoc(roomRef, updates);
@@ -674,14 +765,13 @@ export default function App() {
       <ErrorBoundary>
           <CardDetailModal detailCard={detailCard} onClose={() => setDetailCard(null)} />
 
-          {/* プレイカード通知 (文字削除版) */}
+          {/* プレイカード通知 */}
           {notification && (
               <div 
                 key={notification.key} 
                 className={`fixed top-32 z-[100] animate-pop-notification ${notification.side === 'left' ? 'left-20' : 'right-20'}`}
               >
                  <div className="relative transform scale-150 origin-top">
-                    {/* カードのみ表示！ */}
                     <Card card={notification.card} location="detail" />
                  </div>
               </div>
@@ -690,7 +780,7 @@ export default function App() {
           {view === 'menu' && (
               <div className="flex flex-col items-center justify-center w-full min-h-screen bg-slate-900 text-white font-sans select-none" onClick={handleBackgroundClick}>
                   <h1 className="text-6xl font-bold mb-4 text-blue-400">DUEL CARD GAME</h1>
-                  <p className="mb-8 text-slate-400"></p>
+                  <p className="mb-8 text-slate-400">Ver 11.0: Visual Update & Bug Fixes ✨</p>
                   <div className="flex flex-col gap-4 w-64">
                       <button onClick={() => setView('deck')} className="bg-indigo-600 hover:bg-indigo-500 py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2"><Swords size={20}/> デッキ構築</button>
                       <button onClick={() => setView('lobby')} disabled={!isDeckValidStrict(myDeckIds)} className={`w-full py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2 ${isDeckValidStrict(myDeckIds) ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
@@ -738,7 +828,6 @@ export default function App() {
           {view === 'game' && gameData && (
               <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onClick={handleBackgroundClick} onContextMenu={(e) => e.preventDefault()}>
                   
-                  {/* 戦略フェイズ (リッチデザイン版・マナ制限付き) */}
                   {isMyTurn && gameData.turnPhase === 'start_choice' && (
                       <div className="absolute inset-0 bg-black/40 z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
                           
@@ -748,7 +837,6 @@ export default function App() {
 
                           <div className="flex gap-12 md:gap-24 items-center">
                               
-                              {/* 💎 マナチャージ (最大値なら無効化！) */}
                               {(() => {
                                 const isMaxMana = gameData[myRole].maxMana >= MAX_MANA_LIMIT;
                                 return (
@@ -758,54 +846,25 @@ export default function App() {
                                     className={`group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 ${isMaxMana ? 'grayscale cursor-not-allowed opacity-50' : 'hover:scale-105'}`}
                                   >
                                     <div className={`absolute inset-0 rounded-2xl overflow-hidden border-4 transition-all bg-slate-900/80 ${isMaxMana ? 'border-slate-600' : 'border-blue-400/30 group-hover:border-blue-400 group-hover:shadow-[0_0_50px_rgba(59,130,246,0.6)]'}`}>
-                                      <img 
-                                        src="/images/strategy_mana.png" 
-                                        alt="Mana Charge"
-                                        className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700"
-                                        onError={(e) => {
-                                            e.target.style.display = 'none';
-                                            e.target.parentNode.classList.add('bg-gradient-to-br', 'from-blue-900', 'to-slate-900');
-                                        }}
-                                      />
+                                      <img src="/images/strategy_mana.png" alt="Mana Charge" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-gradient-to-br', 'from-blue-900', 'to-slate-900'); }} />
                                       <div className="absolute inset-0 bg-gradient-to-t from-blue-900/80 via-transparent to-transparent opacity-60"></div>
                                     </div>
-
                                     <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-                                       <span className={`text-6xl md:text-7xl font-serif font-black drop-shadow-[0_0_10px_rgba(59,130,246,1)] ${isMaxMana ? 'text-slate-400' : 'text-white group-hover:animate-pulse'}`}>
-                                         MANA
-                                       </span>
-                                       <div className={`mt-4 px-4 py-1 bg-black/60 rounded-full border backdrop-blur-md text-sm font-bold tracking-wider transition-colors ${isMaxMana ? 'border-slate-500 text-slate-400' : 'border-blue-400/50 text-blue-200 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                                         {isMaxMana ? 'MAX REACHED' : '最大マナ +1'}
-                                       </div>
+                                       <span className={`text-6xl md:text-7xl font-serif font-black drop-shadow-[0_0_10px_rgba(59,130,246,1)] ${isMaxMana ? 'text-slate-400' : 'text-white group-hover:animate-pulse'}`}>MANA</span>
+                                       <div className={`mt-4 px-4 py-1 bg-black/60 rounded-full border backdrop-blur-md text-sm font-bold tracking-wider transition-colors ${isMaxMana ? 'border-slate-500 text-slate-400' : 'border-blue-400/50 text-blue-200 group-hover:bg-blue-600 group-hover:text-white'}`}>{isMaxMana ? 'MAX REACHED' : '最大マナ +1'}</div>
                                     </div>
                                   </button>
                                 );
                               })()}
 
-                              {/* 💰 ドロー強化 (こっちはいつでもOK) */}
-                              <button 
-                                onClick={() => resolveStartPhase('draw')} 
-                                className="group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 hover:scale-105"
-                              >
+                              <button onClick={() => resolveStartPhase('draw')} className="group relative w-64 h-80 md:w-80 md:h-96 transition-all duration-300 hover:scale-105">
                                 <div className="absolute inset-0 rounded-2xl overflow-hidden border-4 border-yellow-400/30 group-hover:border-yellow-400 group-hover:shadow-[0_0_50px_rgba(250,204,21,0.6)] transition-all bg-slate-900/80">
-                                  <img 
-                                    src="/images/strategy_draw.png" 
-                                    alt="Draw Card"
-                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700"
-                                    onError={(e) => {
-                                        e.target.style.display = 'none';
-                                        e.target.parentNode.classList.add('bg-gradient-to-br', 'from-yellow-900', 'to-slate-900');
-                                    }}
-                                  />
+                                  <img src="/images/strategy_draw.png" alt="Draw Card" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-gradient-to-br', 'from-yellow-900', 'to-slate-900'); }} />
                                   <div className="absolute inset-0 bg-gradient-to-t from-yellow-900/80 via-transparent to-transparent opacity-60"></div>
                                 </div>
                                 <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-                                   <span className="text-6xl md:text-7xl font-serif font-black text-yellow-100 drop-shadow-[0_0_10px_rgba(234,179,8,1)] group-hover:animate-pulse">
-                                     DRAW
-                                   </span>
-                                   <div className="mt-4 px-4 py-1 bg-black/60 rounded-full border border-yellow-400/50 backdrop-blur-md text-yellow-200 text-sm font-bold tracking-wider group-hover:bg-yellow-600 group-hover:text-white transition-colors">
-                                     カードを1枚引く
-                                   </div>
+                                   <span className="text-6xl md:text-7xl font-serif font-black text-yellow-100 drop-shadow-[0_0_10px_rgba(234,179,8,1)] group-hover:animate-pulse">DRAW</span>
+                                   <div className="mt-4 px-4 py-1 bg-black/60 rounded-full border border-yellow-400/50 backdrop-blur-md text-yellow-200 text-sm font-bold tracking-wider group-hover:bg-yellow-600 group-hover:text-white transition-colors">カードを1枚引く</div>
                                 </div>
                               </button>
 

@@ -21,10 +21,12 @@ export default {
         
         // 📢 プレイ通知用（下から出てフェードアウト）
         'pop-notification': 'pop-notification 1.5s ease-in-out forwards',
+        //ダメージ用フロートアニメーション
+        'float-damage': 'float-damage 1s ease-out forwards',
       },
       keyframes: {
         'slow-pulse': {
-          '0%, 100%': { opacity: '0.5' },
+          '0%, 100%': { opacity: '0.8' },
           '50%': { opacity: '0.2' },
         },
         'glow-blue': {
@@ -50,7 +52,17 @@ export default {
           '0%': { opacity: '0', transform: 'translateY(50px) scale(0.8)' },
           '10%': { opacity: '1', transform: 'translateY(0) scale(1)' },
           '80%': { opacity: '1', transform: 'translateY(0) scale(1)' },
-          '100%': { opacity: '0', transform: 'translateY(-20px) scale(1.05)' }
+          '100%': { opacity: '0', transform: 'translateY(-20px) scale(1.05)' },
+        },
+          'float-damage': {
+          '0%': { opacity: '0', transform: 'translateY(0) scale(0.5)' },
+          '20%': { opacity: '1', transform: 'translateY(-10px) scale(1.2)' },
+          '100%': { opacity: '0', transform: 'translateY(-50px) scale(1)' },
+        },
+        'fade-out-death': {
+          '0%': { opacity: '1', transform: 'scale(1)', filter: 'grayscale(0)' },
+          '30%': { opacity: '1', transform: 'scale(1)', filter: 'grayscale(1) brightness(0.5)' }, // まず白黒＆暗くなる
+          '100%': { opacity: '0', transform: 'scale(0.9)', filter: 'grayscale(1) brightness(0)' }, // 消える 
         }
       }
     },
