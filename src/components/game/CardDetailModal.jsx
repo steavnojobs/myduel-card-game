@@ -1,27 +1,30 @@
 import React from 'react';
-// Xアイコンはもう使わないので削除してOK！
-// import { X } from 'lucide-react'; 
 import Card from './Card'; 
+
+const KEYWORD_INFOS = {
+  haste: { label: "速攻", desc: "出たターンに攻撃できる" },
+  taunt: { label: "挑発", desc: "挑発を持ったカード以外を攻撃できない" },
+  bane: { label: "相討ち", desc: "ダメージを与えた相手を破壊する" },
+  elusive: { label: "回避", desc: "回避を持つユニット以外から攻撃されない" },
+  stealth: { label: "隠密", desc: "効果の対象にならない" },
+  divineShield: { label: "聖なる盾", desc: "ダメージを1回無効にする" },
+  doubleAttack: { label: "連撃", desc: "2回攻撃できる" },
+};
 
 const CardDetailModal = ({ detailCard, onClose }) => {
   if (!detailCard) return null;
 
   return (
-    // ★修正1: 画面全体を覆う透明なクリッカブル領域を作る (fixed inset-0)
-    // これなら背景（カードプール）は丸見えだけど、クリック判定は拾える！
-    <div 
-      className="fixed inset-0 z-[100] bg-transparent"
-      onClick={onClose} // どこを押しても閉じる！
-    >
+    // ★修正1: pointer-events-none を追加して、クリックを裏側(デッキビルダー)に貫通させる！
+    // onClick={onClose} は削除 (裏側の背景クリック判定に任せる)
+    <div className="fixed inset-0 z-[100] pointer-events-none">
+      
       {/* 詳細ウィンドウ本体 */}
-      {/* 左上(top-8 left-8)に固定配置！ */}
+      {/* ★修正2: ここに pointer-events-auto を追加して、このウィンドウ自体は操作できるようにする */}
       <div 
-        className="absolute top-8 left-8 bg-slate-900/95 border border-slate-700 rounded-2xl w-[800px] max-w-[90vw] flex flex-row overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md animate-in fade-in slide-in-from-left-4 duration-300 origin-top-left scale-90"
-        onClick={(e) => e.stopPropagation()} // ウィンドウの中をクリックした時は閉じないようにする
+        className="absolute top-8 left-8 bg-slate-900/95 border border-slate-700 rounded-2xl w-[800px] max-w-[90vw] flex flex-row overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md animate-in fade-in slide-in-from-left-4 duration-300 origin-top-left scale-90 pointer-events-auto"
       >
         
-        {/* ★修正2: 閉じるボタンは削除しました！スッキリ！★ */}
-
         {/* --- 左側：巨大カード表示エリア --- */}
         <div className="bg-slate-950 p-6 flex items-center justify-center w-1/2 border-r border-slate-800 relative overflow-hidden group">
           
@@ -31,11 +34,12 @@ const CardDetailModal = ({ detailCard, onClose }) => {
               src={`/images/cards/${detailCard.id}.webp`} 
               className="w-full h-full object-cover blur-xl scale-150"
               alt=""
+              onError={(e) => { e.target.style.display = 'none'; }}
             />
           </div>
 
           {/* 巨大カード */}
-          <div className="relative z-10 scale-90 transition-transform duration-500 group-hover:scale-100">
+          <div className="relative z-10 scale-100 transition-transform duration-500 group-hover:scale-100">
             <Card 
               card={detailCard} 
               location="detail" 
@@ -83,12 +87,28 @@ const CardDetailModal = ({ detailCard, onClose }) => {
           {/* 効果テキスト */}
           <div className="flex-1">
             <h3 className="text-xs font-bold text-slate-400 mb-1">💎 カード効果</h3>
-            <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/50 text-slate-200 text-sm leading-relaxed min-h-[80px]">
+            <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/50 text-slate-200 text-lg leading-relaxed min-h-[80px]">
               {detailCard.description 
                 ? detailCard.description 
                 : <span className="text-slate-600 italic">効果なし</span>
               }
             </div>
+          </div>
+
+          {/* ★ここに追加！キーワード能力の説明リスト */}
+          <div className="mt-4 flex flex-col gap-2">
+            {Object.keys(KEYWORD_INFOS).map(key => (
+              detailCard[key] && (
+                <div key={key} className="flex items-start gap-2 bg-black/40 p-2 rounded border border-white/5">
+                  <span className="bg-yellow-500 text-black text-base font-bold px-2 py-0.5 rounded shadow whitespace-nowrap">
+                    {KEYWORD_INFOS[key].label}
+                  </span>
+                  <span className="text-base text-slate-300">
+                    {KEYWORD_INFOS[key].desc}
+                  </span>
+                </div>
+              )
+            ))}
           </div>
 
           {/* フレーバーテキスト */}
