@@ -5,7 +5,7 @@ import { getCard } from '../../utils/helpers';
 import Card from '../game/Card';
 
 // 定数
-const DECK_SIZE = 30;
+const DECK_SIZE = 40;
 const MAX_COPIES = 3;
 
 export default function DeckBuilder({ myDeckIds, setMyDeckIds, onBack, onContextMenu, onBackgroundClick }) {
