@@ -301,6 +301,7 @@ export default function App() {
               return card;
           }).filter(u => u.currentHp > 0);
 
+          // まずは基本の状態セット
           updates[`${myRole}.board`] = processedBoard.map(u => {
               let newStatus = u.status || [];
               let canAttack = true;
@@ -311,11 +312,27 @@ export default function App() {
               return { ...u, canAttack: canAttack, attackCount: 0, status: newStatus };
           });
 
+          // ターン開始時効果の発動
           me.board.forEach(card => {
               if (card.turnStart) {
-                  processEffect(card.turnStart, me, enemy, updates, myRole, enemyRole, gameData);
+                  // ★修正: 第8引数に card.uid を渡すのを忘れずに！(前回修正済み)
+                  processEffect(card.turnStart, me, enemy, updates, myRole, enemyRole, gameData, card.uid);
               }
           });
+
+          // ★★★ 追加: 死体掃除処理 (ここが足りなかった！) ★★★
+          // processEffect で HPが0になったユニット (destroy_selfなど) をここで削除する！
+          const currentMyBoard = updates[`${myRole}.board`];
+          const currentEnemyBoard = updates[`${enemyRole}.board`] || enemy.board;
+
+          if (currentMyBoard) {
+              updates[`${myRole}.board`] = currentMyBoard.filter(u => u.currentHp > 0);
+          }
+          if (currentEnemyBoard) {
+              updates[`${enemyRole}.board`] = currentEnemyBoard.filter(u => u.currentHp > 0);
+          }
+          // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
           updates.turnPhase = 'strategy';
           await updateDoc(roomRef, updates);
       } else if (gameData.turnPhase === 'draw_phase') {

@@ -131,9 +131,9 @@ export const CARD_DATABASE = [
     "health": 3,
     "description": "【登場時】敵全体に1ダメージ。",
     "onPlay": {
-      "type": "damage_all", // ★修正: damage_all_enemy -> damage_all
+      "type": "damage_all",
       "value": 1,
-      "target": "enemy_unit" // ★追加
+      "target": "enemy_unit"
     }
   },
   {
@@ -378,9 +378,9 @@ export const CARD_DATABASE = [
     "health": 10,
     "description": "【登場時】敵全体に5ダメージ。",
     "onPlay": {
-      "type": "damage_all", // ★修正: damage_all_enemy -> damage_all
+      "type": "damage_all",
       "value": 5,
-      "target": "enemy_unit" // ★追加
+      "target": "enemy_unit"
     }
   },
   {
@@ -458,9 +458,9 @@ export const CARD_DATABASE = [
     "health": 3,
     "description": "【ターン終了時】ランダムな味方1体を2回復。",
     "turnEnd": {
-      "type": "heal_random", // ★修正: heal_random_ally -> heal_random
+      "type": "heal_random",
       "value": 2,
-      "target": "ally_unit" // ★追加
+      "target": "ally_unit"
     }
   },
   {
@@ -546,7 +546,7 @@ export const CARD_DATABASE = [
     "health": 8,
     "description": "【登場時】敵ユニット1体を破壊する。",
     "onPlay": {
-      "type": "destroy", // ★修正: destroy_unit -> destroy
+      "type": "destroy",
       "value": 0,
       "target": "enemy_unit"
     }
@@ -705,7 +705,7 @@ export const CARD_DATABASE = [
     "onPlay": {
       "type": "damage_random",
       "value": 3,
-      "target": "enemy_unit" // 念のため追加
+      "target": "enemy_unit"
     }
   },
   {
@@ -757,9 +757,9 @@ export const CARD_DATABASE = [
     "health": 0,
     "description": "敵全体に2ダメージ。",
     "onPlay": {
-      "type": "damage_all", // ★修正
+      "type": "damage_all",
       "value": 2,
-      "target": "enemy_unit" // ★追加
+      "target": "enemy_unit"
     }
   },
   {
@@ -831,9 +831,9 @@ export const CARD_DATABASE = [
     "description": "敵全体とプレイヤーに4ダメージ。",
     "onPlay": [
       {
-        "type": "damage_all", // ★修正
+        "type": "damage_all",
         "value": 4,
-        "target": "enemy_unit" // ★追加
+        "target": "enemy_unit"
       },
       {
         "type": "damage_face",
@@ -863,7 +863,7 @@ export const CARD_DATABASE = [
     "health": 0,
     "description": "敵ユニット1体を破壊する。",
     "onPlay": {
-      "type": "destroy", // ★修正: destroy_unit -> destroy
+      "type": "destroy",
       "value": 0,
       "target": "enemy_unit"
     }
@@ -999,9 +999,9 @@ export const CARD_DATABASE = [
     "description": "敵全体に1ダメージ。カードを1枚引く。",
     "onPlay": [
       {
-        "type": "damage_all", // ★修正
+        "type": "damage_all",
         "value": 1,
-        "target": "enemy_unit" // ★追加
+        "target": "enemy_unit"
       },
       {
         "type": "draw",
@@ -1133,9 +1133,9 @@ export const CARD_DATABASE = [
     "health": 3,
     "description": "【ターン終了時】ランダムな味方ユニット1体を1回復する。",
     "turnEnd": {
-      "type": "heal_random", // ★修正: heal_random_ally -> heal_random
+      "type": "heal_random",
       "value": 1,
-      "target": "ally_unit" // ★追加
+      "target": "ally_unit"
     }
   },
   {
@@ -1253,6 +1253,8 @@ export const CARD_DATABASE = [
     }
   }
 ];
+
+
 
 export const MANA_COIN = {
   "id": 9999,

@@ -328,9 +328,14 @@ export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefi
         
         case 'destroy_self': {
             if (sourceUnitUid) {
-                const targetUnit = currentMeBoard.find(u => u.uid === sourceUnitUid);
+                // ★修正: const currentMeBoard ではなく、updatesから最新の盤面を取得する！
+                // (まだupdatesになければ me.board を使う)
+                const latestMeBoard = updates[`${rolePrefix}.board`] || me.board;
+                
+                const targetUnit = latestMeBoard.find(u => u.uid === sourceUnitUid);
+                
                 if (targetUnit) {
-                    updates[`${rolePrefix}.board`] = currentMeBoard.map(u => 
+                    updates[`${rolePrefix}.board`] = latestMeBoard.map(u => 
                         u.uid === sourceUnitUid ? { ...u, currentHp: 0 } : u
                     );
                     logMsg = `💀 ${targetUnit.name}は自壊した！`;
