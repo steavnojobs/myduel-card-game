@@ -1251,8 +1251,75 @@ export const CARD_DATABASE = [
       "value": 1,
       "target": "enemy_unit"
     }
+  },
+  {
+    "id": 54,
+    "type": "unit",
+    "name": "魔法使いの見習い・リリア",
+    "cost": 2,
+    "description": "【登場時】手札に「マジックキャンディ」を加える。",
+    "attack": 1,
+    "health": 3,
+    "onPlay": {
+      "type": "generate_card",
+      "value": 9000
+    }
+  },
+  {
+    "id": 9000,
+    "type": "spell",
+    "name": "マジックキャンディ",
+    "cost": 0,
+    "description": "【登場時】ランダムな相手のユニットに1ダメージ。自分のリーダーを1回復する。",
+    "attack": 0,
+    "health": 0,
+    "onPlay": [
+      {
+        "type": "damage_random",
+        "value": 1,
+        "target": "enemy_unit"
+      },
+      {
+        "type": "heal_face",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": 55,
+    "type": "unit",
+    "name": "癒やしの歌姫・セレーナ",
+    "cost": 4,
+    "description": "【ターン開始時】ランダムな味方を2回復する。攻撃力+1。",
+    "attack": 3,
+    "health": 4,
+    "turnStart": [
+      {
+        "type": "heal_random_ally",
+        "value": 2
+      },
+      {
+        "type": "buff_self_attack",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": 56,
+    "type": "unit",
+    "name": "妖精女王・ティターニア",
+    "cost": 7,
+    "description": "【登場時】自分のユニットを手札に戻す。",
+    "attack": 5,
+    "health": 6,
+    "onPlay": {
+      "type": "return_to_hand",
+      "target": "ally_unit"
+    }
   }
 ];
+
+
 
 
 
