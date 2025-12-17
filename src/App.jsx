@@ -428,13 +428,40 @@ export default function App() {
   }, [roomId, view, userId, isHost, myRole]);
 
   // ★重要: ターゲットのタイプをカード効果から取得
+  // ★修正: 手動選択が必要な効果タイプかどうかを判定するヘルパー
+  const isManualTargetEffect = (e) => {
+      if (!e || !e.type) return false;
+
+      // 手動でクリックして選ぶ必要がある効果のリスト
+      // ※ damage_random や damage_all などはここに含まないので false になる
+      const manualTypes = [
+          'damage',           // 単体ダメージ
+          'heal',             // 単体回復
+          'destroy',          // 単体破壊
+          'silence_unit',     // 単体沈黙
+          'freeze_enemy',     // 単体凍結
+          'return_to_hand',   // バウンス
+          'execute_damaged',  // 処刑
+          'chain_lightning',  // 連鎖
+          'double_stats',     // 倍化
+          'heal_unit_full'    // 全回復
+      ];
+
+      // タイプが一致し、かつターゲット範囲が指定されている場合のみ true
+      return manualTypes.includes(e.type) && 
+             ['unit', 'enemy_unit', 'ally_unit', 'all_enemy', 'any', 'select'].includes(e.target);
+  };
+
+  // ★修正: 上記のヘルパーを使って、本当に選択が必要な時だけターゲットタイプを返す
   const getRequiredTargetType = (effect) => {
       if (!effect) return null;
+      
       if (Array.isArray(effect)) {
-          const targetedEffect = effect.find(e => ['unit', 'enemy_unit', 'ally_unit', 'all_enemy', 'any', 'select'].includes(e.target));
+          const targetedEffect = effect.find(e => isManualTargetEffect(e));
           return targetedEffect ? targetedEffect.target : null;
       }
-      return ['unit', 'enemy_unit', 'ally_unit', 'all_enemy', 'any', 'select'].includes(effect.target) ? effect.target : null;
+      
+      return isManualTargetEffect(effect) ? effect.target : null;
   };
 
   // ★重要: ターゲットが有効かチェックする共通関数 (Building除外、隠密チェックなど)
