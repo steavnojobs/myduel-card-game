@@ -62,19 +62,18 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
 
     // 部屋作成
     const createRoom = async () => {
-        if (!userId) return; 
-        if (myDeckIds.length === 0) return;
+        if (!userId || myDeckIds.length === 0) return;
         
         const newRoomId = generateId().substring(0, 6).toUpperCase(); 
         const roomRef = getRoomRef(newRoomId);
         
+        // 50%で先行後攻を決める
         const firstTurn = Math.random() < 0.5 ? 'host' : 'guest'; 
         const hostDeck = shuffleDeck(myDeckIds);
         
-        let hostHand = hostDeck.splice(0, 3); 
-        let hostMana = INITIAL_MANA; 
-        // 後攻ならマナコイン
-        if (firstTurn !== 'host') hostHand.push({ ...MANA_COIN, uid: generateId() });
+        // ★変更: 先行なら3枚、後攻なら4枚引く (コインはまだ！)
+        const drawCount = firstTurn === 'host' ? 3 : 4;
+        let hostHand = hostDeck.splice(0, drawCount);
         
         const initialData = { 
             hostId: userId, 
@@ -83,24 +82,18 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
             createdAt: Date.now(), 
             turnCount: 1, 
             currentTurn: firstTurn, 
-            turnPhase: 'strategy', 
+            turnPhase: 'coin_toss', // ★変更: 最初はコイントスフェイズ
             lastAction: null, 
             host: { 
-                hp: INITIAL_HP, 
-                mana: hostMana, 
-                maxMana: INITIAL_MANA, 
-                deck: hostDeck, 
-                hand: hostHand, 
-                board: [], 
-                initialDeckSummary: getDeckSummary(myDeckIds) 
+                hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, 
+                deck: hostDeck, hand: hostHand, board: [], 
+                initialDeckSummary: getDeckSummary(myDeckIds),
+                mulliganDone: false // ★追加: マリガン完了フラグ
             }, 
             guest: { 
-                hp: INITIAL_HP, 
-                mana: INITIAL_MANA, 
-                maxMana: INITIAL_MANA, 
-                deck: [], 
-                hand: [], 
-                board: [] 
+                hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, 
+                deck: [], hand: [], board: [],
+                mulliganDone: false // ★追加
             } 
         };
         
@@ -111,25 +104,23 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         setView('lobby');
     };
 
-    // 部屋参加
+    // ★部屋参加 (Guest = 後攻の可能性)
     const joinRoom = async (inputRoomId) => {
-        if (!userId || !inputRoomId) return; 
-        if (myDeckIds.length === 0) return;
+        if (!userId || !inputRoomId || myDeckIds.length === 0) return;
         
         const roomRef = getRoomRef(inputRoomId); 
         const snap = await getDoc(roomRef);
         
         if (snap.exists() && snap.data().status === 'waiting') {
             const data = snap.data(); 
-            if (data.hostId === userId) { 
-                alert("自分の部屋には参加できません"); 
-                return; 
-            }
+            if (data.hostId === userId) { alert("自分の部屋には参加できません"); return; }
             
             const guestDeck = shuffleDeck(myDeckIds); 
-            let guestHand = guestDeck.splice(0, 3); 
-            // 後攻ならマナコイン
-            if (data.currentTurn !== 'guest') guestHand.push({ ...MANA_COIN, uid: generateId() });
+            
+            // ★変更: 先行(GuestがTurnOwner)なら3枚、後攻(Guestじゃない)なら4枚
+            const drawCount = data.currentTurn === 'guest' ? 3 : 4;
+            let guestHand = guestDeck.splice(0, drawCount); 
+            // コインはまだ渡さない
             
             await updateDoc(roomRef, { 
                 guestId: userId, 
@@ -138,7 +129,8 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
                 'guest.hand': guestHand, 
                 'guest.maxMana': INITIAL_MANA, 
                 'guest.mana': INITIAL_MANA, 
-                'guest.initialDeckSummary': getDeckSummary(myDeckIds) 
+                'guest.initialDeckSummary': getDeckSummary(myDeckIds),
+                'guest.mulliganDone': false // ★追加
             });
             
             sessionStorage.setItem('duel_room_id', inputRoomId); 
@@ -150,10 +142,5 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         }
     };
 
-    return {
-        isDeckValidStrict,
-        startRandomMatch,
-        createRoom,
-        joinRoom
-    };
+    return { isDeckValidStrict, startRandomMatch, createRoom, joinRoom };
 };

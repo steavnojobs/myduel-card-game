@@ -3,12 +3,71 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { processEffect, handleDraw } from '../utils/gameLogic';
 import { EFFECT_DELAY } from '../data/rules';
+import { MANA_COIN } from '../data/cards'; // ★追加: マナコイン
+import { generateId } from '../utils/helpers'; // ★追加: ID生成
 
 const appId = 'my-card-game'; 
 
 export const useGameLoop = (gameData, roomId, myRole, enemyRole, isMyTurn) => {
     const isProcessingTurnEnd = useRef(false);
+    const isProcessingPhase = useRef(false); // ★追加: フェイズ重複実行防止
 
+    // -------------------------------------------------------
+    // ★1. ゲーム開始前の進行 (Hostのみが管理)
+    // coin_toss -> mulligan -> start_effect
+    // -------------------------------------------------------
+    useEffect(() => {
+        // Hostじゃなければ何もしない（Hostが進行役）
+        if (!gameData || !roomId || myRole !== 'host') return;
+
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${roomId}`);
+
+        const proceedPreGame = async () => {
+            if (isProcessingPhase.current) return;
+
+            // ▼ コイントス演出 (3秒後にマリガンへ)
+            if (gameData.turnPhase === 'coin_toss') {
+                isProcessingPhase.current = true;
+                console.log("🪙 Coin Toss Phase...");
+                setTimeout(async () => {
+                    await updateDoc(roomRef, { turnPhase: 'mulligan' });
+                    isProcessingPhase.current = false;
+                }, 3000);
+            }
+            // ▼ マリガン待機 (両者が完了したらゲーム開始へ)
+            else if (gameData.turnPhase === 'mulligan') {
+                const hostDone = gameData.host?.mulliganDone;
+                const guestDone = gameData.guest?.mulliganDone;
+
+                if (hostDone && guestDone) {
+                    isProcessingPhase.current = true;
+                    
+                    // ゲーム開始処理: 後攻にコインを渡す
+                    // ※ createRoomで決めた currentTurn が先行プレイヤー
+                    const secondPlayerRole = gameData.currentTurn === 'host' ? 'guest' : 'host';
+                    const secondPlayerHand = [...gameData[secondPlayerRole].hand];
+                    
+                    secondPlayerHand.push({ ...MANA_COIN, uid: generateId() });
+                    
+                    let updates = {};
+                    updates[`${secondPlayerRole}.hand`] = secondPlayerHand;
+                    updates.turnPhase = 'start_effect'; // 最初のターン開始！
+                    updates.lastAction = "ゲーム開始！";
+
+                    console.log("🎮 Game Start! Giving Coin to", secondPlayerRole);
+                    await updateDoc(roomRef, updates);
+                    isProcessingPhase.current = false;
+                }
+            }
+        };
+        proceedPreGame();
+    }, [gameData, roomId, myRole]);
+
+
+    // -------------------------------------------------------
+    // ★2. ターン中の進行 (ターン主のみが管理)
+    // start_effect -> strategy -> draw -> main -> end_effect
+    // -------------------------------------------------------
     useEffect(() => {
         if (!gameData || !isMyTurn || !roomId) return;
 
@@ -52,7 +111,6 @@ export const useGameLoop = (gameData, roomId, myRole, enemyRole, isMyTurn) => {
 
                 setTimeout(async () => {
                     const finalUpdates = {}; 
-                    // 死体処理の再取得用
                     const currentMyBoard = updates[`${myRole}.board`] || me.board;
                     const currentEnemyBoard = updates[`${enemyRole}.board`] || enemy.board;
                     
@@ -143,7 +201,7 @@ export const useGameLoop = (gameData, roomId, myRole, enemyRole, isMyTurn) => {
 
                 // 死体掃除 (start_effect用)
                 const currentMyBoard = updates[`${myRole}.board`];
-                const currentEnemyBoard = updates[`${enemyRole}.board`] || enemy.board; // 敵盤面への影響も考慮
+                const currentEnemyBoard = updates[`${enemyRole}.board`] || enemy.board; 
                 
                 if (currentMyBoard) updates[`${myRole}.board`] = currentMyBoard.filter(u => u.currentHp > 0);
                 if (currentEnemyBoard) updates[`${enemyRole}.board`] = currentEnemyBoard.filter(u => u.currentHp > 0);

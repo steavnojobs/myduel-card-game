@@ -2,6 +2,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase'; 
 import { MAX_BOARD_SIZE, MAX_MANA_LIMIT, EFFECT_DELAY, INITIAL_MANA } from '../data/rules';
 import { processEffect, handleDraw, createUnit, applyDamage } from '../utils/gameLogic';
+import { generateId, shuffleDeck } from '../utils/helpers';
 
 const appId = 'my-card-game'; 
 
@@ -59,6 +60,46 @@ export const useGameActions = ({
 }) => {
 
     const getRoomRef = (rId) => doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${rId}`);
+
+    // --- ★追加: マリガン実行処理 ---
+    const submitMulligan = async (exchangeUids) => {
+        if (!gameData || !roomId) return;
+        const roomRef = getRoomRef(roomId);
+        const me = gameData[myRole];
+        
+        let newHand = [...me.hand];
+        let newDeck = [...me.deck];
+        
+        // 1. 交換対象のカードを手札から抜き取り、デッキに戻すリストを作る
+        const cardsToReturn = [];
+        // 残るカードだけにする
+        newHand = newHand.filter(card => {
+            if (exchangeUids.includes(card.uid)) {
+                cardsToReturn.push(card);
+                return false;
+            }
+            return true;
+        });
+
+        // 2. デッキに戻してシャッフル
+        newDeck = [...newDeck, ...cardsToReturn];
+        newDeck = shuffleDeck(newDeck); // ランダムに混ぜる
+
+        // 3. 戻した枚数分だけ引く
+        const drawCount = cardsToReturn.length;
+        if (drawCount > 0) {
+            const drawnCards = newDeck.splice(0, drawCount);
+            newHand = [...newHand, ...drawnCards];
+        }
+
+        // 4. 更新データを送信
+        let updates = {};
+        updates[`${myRole}.hand`] = newHand;
+        updates[`${myRole}.deck`] = newDeck;
+        updates[`${myRole}.mulliganDone`] = true; // 完了フラグON！
+
+        await updateDoc(roomRef, updates);
+    };
 
     // --- カードプレイ開始 (ターゲットが必要かチェック) ---
     const initiatePlayCard = (card) => {
@@ -347,7 +388,7 @@ export const useGameActions = ({
         await updateDoc(roomRef, updates);
     };
 
-    // ★追加: 降参機能 (ここに追加したよ！)
+    // --- 降参機能 ---
     const handleSurrender = async () => {
         if (!roomId || !gameData) return;
         const roomRef = getRoomRef(roomId);
@@ -365,6 +406,7 @@ export const useGameActions = ({
         attack,
         endTurn,
         resolveStartPhase,
-        handleSurrender // ★ここにも追加！
+        handleSurrender,
+        submitMulligan // ★これが入っているか絶対確認してね！！
     };
 };

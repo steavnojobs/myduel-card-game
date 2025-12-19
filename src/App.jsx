@@ -8,13 +8,15 @@ import { useMatchmaking } from './hooks/useMatchmaking';
 import { useGameActions } from './hooks/useGameActions';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useGameSync } from './hooks/useGameSync';
-import { useGameControls } from './hooks/useGameControls'; // ★追加
+import { useGameControls } from './hooks/useGameControls'; 
 
 // --- Components ---
 import MenuScreen from './components/screens/MenuScreen';
 import LobbyScreen from './components/screens/LobbyScreen';
 import GameScreen from './components/screens/GameScreen';
 import ResultScreen from './components/screens/ResultScreen';
+import CoinTossScreen from './components/screens/CoinTossScreen'; // ★追加
+import MulliganScreen from './components/screens/MulliganScreen'; // ★追加
 import CardDetailModal from './components/game/CardDetailModal';
 import DeckBuilder from './components/screens/DeckBuilder';
 import Card from './components/game/Card';
@@ -61,7 +63,10 @@ export default function App() {
   } = useGameSync(roomId, userId, myRole);
 
   const isMyTurn = gameData && gameData.currentTurn === myRole;
-  const isPhaseLocked = gameData && ['start_effect', 'end_effect', 'switching'].includes(gameData.turnPhase);
+  
+  // ★変更: フェイズロック条件に coin_toss と mulligan を追加
+  // mulligan を削除！coin_toss (演出中) はロックしたままでOK！
+const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 'switching'].includes(gameData.turnPhase);
 
   // Game Logic Hooks
   useGameLoop(gameData, roomId, myRole, enemyRole, isMyTurn);
@@ -69,17 +74,14 @@ export default function App() {
   useEffect(() => {
       if (!gameData) return;
 
-      // 決着がついたらリザルト画面へ！ (降参もここで検知される)
       if (gameData.status === 'finished' && view !== 'result') {
           setView('result');
       }
       
-      // ゲームが始まったらゲーム画面へ！
       if (gameData.status === 'playing' && view !== 'game') {
           setView('game');
       }
 
-      // 待機中ならロビーへ！
       if (gameData.status === 'waiting' && view !== 'lobby') {
           setView('lobby');
       }
@@ -94,7 +96,7 @@ export default function App() {
       userId, myDeckIds, setRoomId, setIsHost, setView
   );
 
-  // ★追加: UI Control Hook (マウス操作などを一任)
+  // ★追加: UI Control Hook
   const controls = useGameControls({
       gameData, myRole, view, isPhaseLocked,
       targetingHandCard, setTargetingHandCard,
@@ -157,6 +159,7 @@ export default function App() {
           
           {notification && ( <div key={notification.key} className={`fixed top-32 z-[100] animate-pop-notification ${notification.side === 'left' ? 'left-20' : 'right-20'}`}> <div className="relative transform scale-150 origin-top"> <Card card={notification.card} location="detail" /> </div> </div> )}
           
+          {/* Screens */}
           {view === 'menu' && (
               <MenuScreen setView={setView} startRandomMatch={startRandomMatch} isDeckValid={isDeckValidStrict(myDeckIds)} />
           )}
@@ -166,8 +169,8 @@ export default function App() {
                   myDeckIds={myDeckIds} 
                   setMyDeckIds={setMyDeckIds} 
                   onBack={() => setView('menu')} 
-                  onContextMenu={controls.handleContextMenu} // ★Hookから使用
-                  onBackgroundClick={controls.handleBackgroundClick} // ★Hookから使用
+                  onContextMenu={controls.handleContextMenu}
+                  onBackgroundClick={controls.handleBackgroundClick}
               />
           )}
           
@@ -175,6 +178,20 @@ export default function App() {
               <LobbyScreen roomId={roomId} createRoom={createRoom} joinRoom={joinRoom} onCancel={handleBackToTitle} />
           )}
           
+          {/* ★追加: コイントス画面 */}
+          {view === 'game' && gameData?.turnPhase === 'coin_toss' && (
+             <CoinTossScreen isMyTurn={isMyTurn} />
+          )}
+
+          {/* ★追加: マリガン画面 */}
+          {view === 'game' && gameData?.turnPhase === 'mulligan' && (
+             <MulliganScreen 
+                hand={gameData[myRole].hand} 
+                onSubmit={gameActions.submitMulligan}
+                isWaiting={gameData[myRole].mulliganDone} 
+             />
+          )}
+
           {view === 'game' && gameData && (
               <GameScreen 
                   gameData={gameData}
@@ -189,13 +206,13 @@ export default function App() {
                   // Actions & Controls
                   handleTargetSelection={gameActions.handleTargetSelection}
                   handleSurrender={gameActions.handleSurrender}
-                  handleBoardDragStart={controls.handleBoardDragStart} // ★Hookから使用
-                  handleContextMenu={controls.handleContextMenu} // ★Hookから使用
-                  handleGameDrop={controls.handleGameDrop} // ★Hookから使用
+                  handleBoardDragStart={controls.handleBoardDragStart}
+                  handleContextMenu={controls.handleContextMenu}
+                  handleGameDrop={controls.handleGameDrop}
                   initiatePlayCard={gameActions.initiatePlayCard}
                   endTurn={gameActions.endTurn}
-                  handleGameDragStart={controls.handleGameDragStart} // ★Hookから使用
-                  handleGameDragEnd={controls.handleGameDragEnd} // ★Hookから使用
+                  handleGameDragStart={controls.handleGameDragStart}
+                  handleGameDragEnd={controls.handleGameDragEnd}
                   resolveStartPhase={gameActions.resolveStartPhase}
               />
           )}
