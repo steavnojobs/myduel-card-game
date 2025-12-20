@@ -4,7 +4,7 @@ import { Swords, Users, Zap } from 'lucide-react';
 export default function MenuScreen({ setView, startRandomMatch, isDeckValid }) {
   return (
     <div className="flex flex-col items-center justify-center w-full min-h-screen bg-slate-900 text-white font-sans select-none">
-        <h1 className="text-6xl font-bold mb-4 text-blue-400">DUEL CARD GAME</h1>
+        <h1 className="text-6xl font-bold mb-4 text-blue-400">Terra Elements: Unlimited Nexus</h1>
         <p className="mb-8 text-slate-400">Ver 44.2: Refactored Edition 🧹</p>
         <div className="flex flex-col gap-4 w-64">
             <button onClick={() => setView('deck')} className="bg-indigo-600 hover:bg-indigo-500 py-4 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2"><Swords size={20}/> デッキ構築</button>

@@ -38,10 +38,8 @@ export const useGameActions = ({
         if (!gameData || !roomId) return;
         const roomRef = getRoomRef(roomId);
         const me = gameData[myRole];
-        
         let newHand = [...me.hand];
         let newDeck = [...me.deck];
-        
         const cardsToReturn = [];
         newHand = newHand.filter(card => {
             if (exchangeUids.includes(card.uid)) {
@@ -50,24 +48,19 @@ export const useGameActions = ({
             }
             return true;
         });
-
-        // ★IDだけ戻す！
         const idsToReturn = cardsToReturn.map(c => c.id).filter(id => id !== undefined);
         newDeck = [...newDeck, ...idsToReturn];
-        newDeck = shuffleDeck(newDeck); // helpers.js修正でこれが正しく動く！
-
+        newDeck = shuffleDeck(newDeck);
         const drawCount = cardsToReturn.length;
         if (drawCount > 0) {
             const drawnIds = newDeck.splice(0, drawCount);
             const drawnCards = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
             newHand = [...newHand, ...drawnCards];
         }
-
         let updates = {};
         updates[`${myRole}.hand`] = newHand;
         updates[`${myRole}.deck`] = newDeck;
         updates[`${myRole}.mulliganDone`] = true;
-
         await updateDoc(roomRef, updates);
     };
 
@@ -99,11 +92,33 @@ export const useGameActions = ({
             updates[`${myRole}.board`] = [...me.board, playedCard];
             if (card.onPlay) effectLog = processEffect(card.onPlay, me, enemy, updates, myRole, enemyRole, gameData, playedCard.uid, targetUid);
         }
+        
+        // --- ★修正: 死亡判定＆墓地送り ---
         const checkDeath = (board, prefix, enemyPrefix) => {
-            if (!board) return; let deadUnits = [], aliveUnits = []; board.forEach(u => { if (u.currentHp <= 0) deadUnits.push(u); else aliveUnits.push(u); }); updates[`${prefix}.board`] = aliveUnits;
-            if (deadUnits.length > 0) { deadUnits.forEach(d => { if (d.onDeath && !d.status?.includes('silenced')) { const log = processEffect(d.onDeath, gameData[prefix === myRole ? myRole : enemyRole], gameData[enemyPrefix === enemyRole ? enemyRole : myRole], updates, prefix, enemyPrefix, gameData, d.uid); if (log) effectLog += " " + log; } }); }
+            if (!board) return; 
+            let deadUnits = [], aliveUnits = []; 
+            board.forEach(u => { 
+                if (u.currentHp <= 0) deadUnits.push(u); 
+                else aliveUnits.push(u); 
+            }); 
+            
+            if (deadUnits.length > 0) {
+                updates[`${prefix}.board`] = aliveUnits;
+                // 墓地へ送る
+                const currentGraveyard = updates[`${prefix}.graveyard`] || gameData[prefix].graveyard || [];
+                updates[`${prefix}.graveyard`] = [...currentGraveyard, ...deadUnits];
+
+                deadUnits.forEach(d => { 
+                    if (d.onDeath && !d.status?.includes('silenced')) { 
+                        const log = processEffect(d.onDeath, gameData[prefix === myRole ? myRole : enemyRole], gameData[enemyPrefix === enemyRole ? enemyRole : myRole], updates, prefix, enemyPrefix, gameData, d.uid); 
+                        if (log) effectLog += " " + log; 
+                    } 
+                }); 
+            }
         };
-        checkDeath(updates[`${enemyRole}.board`] || enemy.board, enemyRole, myRole); checkDeath(updates[`${myRole}.board`] || me.board, myRole, enemyRole);
+        checkDeath(updates[`${enemyRole}.board`] || enemy.board, enemyRole, myRole); 
+        checkDeath(updates[`${myRole}.board`] || me.board, myRole, enemyRole);
+
         const enemyHp = updates[`${enemyRole}.hp`] !== undefined ? updates[`${enemyRole}.hp`] : enemy.hp; const myHp = updates[`${myRole}.hp`] !== undefined ? updates[`${myRole}.hp`] : me.hp;
         if (enemyHp <= 0 || myHp <= 0) { updates.status = 'finished'; updates.winner = enemyHp <= 0 ? myRole : enemyRole; }
         updates.lastAction = `${myRole === 'host' ? 'Host' : 'Guest'}が ${card.name} をプレイ！ ${effectLog || ''}`; await updateDoc(roomRef, updates);
@@ -133,7 +148,7 @@ export const useGameActions = ({
         const attacker = me.board.find(u => u.uid === attackerUid); if (!attacker || !attacker.canAttack || attacker.type === 'building') return;
         if (targetType === 'unit') {
             const targetUnit = enemy.board.find(u => u.uid === targetUid); if (!targetUnit) return;
-            if (targetUnit.elusive && !attacker.elusive) { console.warn("⚠️ Elusive持ちはElusive持ちでしか攻撃できません！"); return; }
+            if (targetUnit.elusive && !attacker.elusive) return;
         }
         const tauntUnits = enemy.board.filter(u => u.taunt && u.currentHp > 0 && !u.stealth && !u.elusive);
         if (tauntUnits.length > 0) { if (targetType === 'face') return; if (targetType === 'unit') { const targetUnit = enemy.board.find(u => u.uid === targetUid); if (!targetUnit.taunt) return; } }
@@ -156,11 +171,29 @@ export const useGameActions = ({
             let finalEnemyBoard = updates[`${enemyRole}.board`] || enemy.board; let finalMyBoard = updates[`${myRole}.board`] || me.board;
             updates[`${enemyRole}.board`] = finalEnemyBoard.map(u => u.uid === target.uid ? processedTarget : u); updates[`${myRole}.board`] = finalMyBoard.map(u => u.uid === attacker.uid ? processedAttacker : u);
         }
+        
+        // --- ★修正: 死亡判定＆墓地送り (攻撃時) ---
         const handleDeath = (board, prefix, oppPrefix) => {
-            let dead = board.filter(u => u.currentHp <= 0), alive = board.filter(u => u.currentHp > 0); updates[`${prefix}.board`] = alive;
-            if (dead.length > 0) dead.forEach(d => { if (d.onDeath && !d.status?.includes('silenced')) { const log = processEffect(d.onDeath, gameData[prefix], gameData[oppPrefix], updates, prefix, oppPrefix, gameData, d.uid); if (log) effectLog += " " + log; } });
+            let dead = [], alive = [];
+            board.forEach(u => { if (u.currentHp <= 0) dead.push(u); else alive.push(u); });
+            
+            if (dead.length > 0) {
+                updates[`${prefix}.board`] = alive;
+                // 墓地へ
+                const currentGraveyard = updates[`${prefix}.graveyard`] || gameData[prefix].graveyard || [];
+                updates[`${prefix}.graveyard`] = [...currentGraveyard, ...dead];
+
+                dead.forEach(d => { 
+                    if (d.onDeath && !d.status?.includes('silenced')) { 
+                        const log = processEffect(d.onDeath, gameData[prefix], gameData[oppPrefix], updates, prefix, oppPrefix, gameData, d.uid); 
+                        if (log) effectLog += " " + log; 
+                    } 
+                });
+            }
         };
-        if (updates[`${enemyRole}.board`]) handleDeath(updates[`${enemyRole}.board`], enemyRole, myRole); if (updates[`${myRole}.board`]) handleDeath(updates[`${myRole}.board`], myRole, enemyRole);
+        if (updates[`${enemyRole}.board`]) handleDeath(updates[`${enemyRole}.board`], enemyRole, myRole); 
+        if (updates[`${myRole}.board`]) handleDeath(updates[`${myRole}.board`], myRole, enemyRole);
+
         const finalMyBoard = updates[`${myRole}.board`] || me.board; updates[`${myRole}.board`] = finalMyBoard.map(u => { if (u.uid === attacker.uid) { const newAttackCount = (u.attackCount || 0) + 1; const canAttackAgain = u.doubleAttack ? newAttackCount < 2 : false; return { ...u, canAttack: canAttackAgain, attackCount: newAttackCount }; } return u; });
         const enemyHp = updates[`${enemyRole}.hp`] !== undefined ? updates[`${enemyRole}.hp`] : enemy.hp; const myHp = updates[`${myRole}.hp`] !== undefined ? updates[`${myRole}.hp`] : me.hp;
         if (enemyHp <= 0 || myHp <= 0) { updates.status = 'finished'; updates.winner = enemyHp <= 0 ? myRole : enemyRole; } updates.lastAction = actionLog + effectLog; await updateDoc(roomRef, updates);

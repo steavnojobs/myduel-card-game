@@ -231,12 +231,14 @@ const Card = ({
             )}
 
             {/* 名前 */}
-            <div className="bg-black/60 rounded px-1 py-[2%] backdrop-blur-[1px] mb-[2%]">
-              <div className={`text-white text-center font-bold truncate 
-                ${isGameDetail ? 'text-lg py-1' : 'text-[8cqw]'}`}>
-                {card.name}
-              </div>
-            </div>
+            {!['detail', 'game-detail'].includes(location) && (
+                <div className="bg-black/60 rounded px-1 py-[2%] backdrop-blur-[1px] mb-[2%]">
+                  <div className={`text-white text-center font-bold truncate 
+                    ${isGameDetail ? 'text-lg py-1' : 'text-[8cqw]'}`}>
+                    {card.name}
+                  </div>
+                </div>
+            )}
 
             <div className="flex justify-between items-end px-[2%] pb-[2%]">
               {card.type === 'unit' && (

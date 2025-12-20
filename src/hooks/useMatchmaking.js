@@ -50,31 +50,26 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         const roomRef = getRoomRef(newRoomId);
         
         const firstTurn = Math.random() < 0.5 ? 'host' : 'guest'; 
-        const hostDeck = shuffleDeck(myDeckIds); // ★ID配列が返ってくる
+        const hostDeck = shuffleDeck(myDeckIds);
         
         const drawCount = firstTurn === 'host' ? 3 : 4;
-        const drawnIds = hostDeck.splice(0, drawCount); // IDを取り出す
-        // ★IDをカード化！これでUnknownにならない！
+        const drawnIds = hostDeck.splice(0, drawCount);
         const hostHand = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
         
         const initialData = { 
-            hostId: userId, 
-            guestId: null, 
-            status: 'waiting', 
-            createdAt: Date.now(), 
-            turnCount: 1, 
-            currentTurn: firstTurn, 
-            turnPhase: 'coin_toss', 
-            lastAction: null, 
+            hostId: userId, guestId: null, status: 'waiting', createdAt: Date.now(), 
+            turnCount: 1, currentTurn: firstTurn, turnPhase: 'coin_toss', lastAction: null, 
             host: { 
                 hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, 
-                deck: hostDeck, // ID配列
-                hand: hostHand, // オブジェクト配列
-                board: [], initialDeckSummary: getDeckSummary(myDeckIds), mulliganDone: false
+                deck: hostDeck, hand: hostHand, board: [], 
+                graveyard: [], // ★追加: 墓地
+                initialDeckSummary: getDeckSummary(myDeckIds), mulliganDone: false
             }, 
             guest: { 
                 hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, 
-                deck: [], hand: [], board: [], mulliganDone: false
+                deck: [], hand: [], board: [], 
+                graveyard: [], // ★追加: 墓地
+                mulliganDone: false
             } 
         };
         await setDoc(roomRef, initialData); 
@@ -89,7 +84,6 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         if (snap.exists() && snap.data().status === 'waiting') {
             const data = snap.data(); 
             if (data.hostId === userId) { alert("自分の部屋には参加できません"); return; }
-            
             const guestDeck = shuffleDeck(myDeckIds); 
             const drawCount = data.currentTurn === 'guest' ? 3 : 4;
             const drawnIds = guestDeck.splice(0, drawCount);
@@ -99,6 +93,7 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
                 guestId: userId, status: 'playing', 
                 'guest.deck': guestDeck, 'guest.hand': guestHand, 
                 'guest.maxMana': INITIAL_MANA, 'guest.mana': INITIAL_MANA, 
+                'guest.graveyard': [], // ★追加: 墓地
                 'guest.initialDeckSummary': getDeckSummary(myDeckIds), 'guest.mulliganDone': false
             });
             sessionStorage.setItem('duel_room_id', inputRoomId); 
