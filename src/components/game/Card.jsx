@@ -230,8 +230,8 @@ const Card = ({
                 </div>
             )}
 
-            {/* 名前 */}
-            {!['detail', 'game-detail'].includes(location) && (
+            {/* 名前 (リストや詳細表示以外なら表示) */}
+            {!['library', 'detail', 'game-detail'].includes(location) && (
                 <div className="bg-black/60 rounded px-1 py-[2%] backdrop-blur-[1px] mb-[2%]">
                   <div className={`text-white text-center font-bold truncate 
                     ${isGameDetail ? 'text-lg py-1' : 'text-[8cqw]'}`}>

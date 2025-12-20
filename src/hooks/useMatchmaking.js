@@ -22,16 +22,27 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         return true;
     };
 
-    const startRandomMatch = async () => {
+    // ★修正: 引数(deckOverride)を受け取れるように変更！
+    const startRandomMatch = async (deckOverride = null) => {
         if (!userId) return; 
-        if (myDeckIds.length === 0) return;
+        
+        // 引数がなければ state の myDeckIds を使う
+        const currentDeck = deckOverride || myDeckIds;
+
+        if (!currentDeck || currentDeck.length === 0) {
+            alert("デッキが選択されていません");
+            return;
+        }
+        
         const roomsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
         const q = query(roomsRef, where("status", "==", "waiting"), limit(10)); 
+        
         try {
             const querySnapshot = await getDocs(q); 
             let targetRoomId = null; 
             const EXPIRE_TIME = 15 * 60 * 1000; 
             const now = Date.now();
+            
             for (const docSnap of querySnapshot.docs) { 
                 const data = docSnap.data(); 
                 if (data.hostId !== userId && data.createdAt && (now - data.createdAt < EXPIRE_TIME)) { 
@@ -39,66 +50,113 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
                     break; 
                 } 
             }
-            if (targetRoomId) { await joinRoom(targetRoomId); } 
-            else { await createRoom(); }
-        } catch (error) { console.error("Error finding match:", error); alert("マッチング中にエラーが発生しました"); }
+            
+            if (targetRoomId) { 
+                console.log("Found room:", targetRoomId); 
+                // 引数のデッキを使って参加
+                await joinRoom(targetRoomId, currentDeck); 
+            } else { 
+                console.log("No room found, creating new one..."); 
+                // 引数のデッキを使って作成
+                await createRoom(currentDeck); 
+            }
+        } catch (error) { 
+            console.error("Error finding match:", error); 
+            alert("マッチング中にエラーが発生しました"); 
+        }
     };
 
-    const createRoom = async () => {
-        if (!userId || myDeckIds.length === 0) return;
+    // ★修正: 引数でデッキを受け取る
+    const createRoom = async (deckOverride = null) => {
+        const useDeck = deckOverride || myDeckIds; // 優先使用
+        if (!userId || useDeck.length === 0) return;
+        
         const newRoomId = generateId().substring(0, 6).toUpperCase(); 
         const roomRef = getRoomRef(newRoomId);
         
         const firstTurn = Math.random() < 0.5 ? 'host' : 'guest'; 
-        const hostDeck = shuffleDeck(myDeckIds);
+        const hostDeck = shuffleDeck(useDeck);
         
         const drawCount = firstTurn === 'host' ? 3 : 4;
         const drawnIds = hostDeck.splice(0, drawCount);
         const hostHand = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
         
         const initialData = { 
-            hostId: userId, guestId: null, status: 'waiting', createdAt: Date.now(), 
-            turnCount: 1, currentTurn: firstTurn, turnPhase: 'coin_toss', lastAction: null, 
+            hostId: userId, 
+            guestId: null, 
+            status: 'waiting', 
+            createdAt: Date.now(), 
+            turnCount: 1, 
+            currentTurn: firstTurn, 
+            turnPhase: 'coin_toss', 
+            lastAction: null, 
             host: { 
-                hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, 
-                deck: hostDeck, hand: hostHand, board: [], 
-                graveyard: [], // ★追加: 墓地
-                initialDeckSummary: getDeckSummary(myDeckIds), mulliganDone: false
+                hp: INITIAL_HP, 
+                mana: INITIAL_MANA, 
+                maxMana: INITIAL_MANA, 
+                deck: hostDeck, 
+                hand: hostHand, 
+                board: [], 
+                graveyard: [],
+                initialDeckSummary: getDeckSummary(useDeck),
+                mulliganDone: false
             }, 
             guest: { 
-                hp: INITIAL_HP, mana: INITIAL_MANA, maxMana: INITIAL_MANA, 
-                deck: [], hand: [], board: [], 
-                graveyard: [], // ★追加: 墓地
+                hp: INITIAL_HP, 
+                mana: INITIAL_MANA, 
+                maxMana: INITIAL_MANA, 
+                deck: [], 
+                hand: [], 
+                board: [],
+                graveyard: [],
                 mulliganDone: false
             } 
         };
+        
         await setDoc(roomRef, initialData); 
         sessionStorage.setItem('duel_room_id', newRoomId); 
-        setRoomId(newRoomId); setIsHost(true); setView('lobby');
+        setRoomId(newRoomId); 
+        setIsHost(true); 
+        setView('lobby');
     };
 
-    const joinRoom = async (inputRoomId) => {
-        if (!userId || !inputRoomId || myDeckIds.length === 0) return;
+    // ★修正: 引数でデッキを受け取る
+    const joinRoom = async (inputRoomId, deckOverride = null) => {
+        const useDeck = deckOverride || myDeckIds; // 優先使用
+        if (!userId || !inputRoomId || useDeck.length === 0) return;
+        
         const roomRef = getRoomRef(inputRoomId); 
         const snap = await getDoc(roomRef);
+        
         if (snap.exists() && snap.data().status === 'waiting') {
             const data = snap.data(); 
             if (data.hostId === userId) { alert("自分の部屋には参加できません"); return; }
-            const guestDeck = shuffleDeck(myDeckIds); 
+            
+            const guestDeck = shuffleDeck(useDeck); 
+            
             const drawCount = data.currentTurn === 'guest' ? 3 : 4;
             const drawnIds = guestDeck.splice(0, drawCount);
             const guestHand = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
             
             await updateDoc(roomRef, { 
-                guestId: userId, status: 'playing', 
-                'guest.deck': guestDeck, 'guest.hand': guestHand, 
-                'guest.maxMana': INITIAL_MANA, 'guest.mana': INITIAL_MANA, 
-                'guest.graveyard': [], // ★追加: 墓地
-                'guest.initialDeckSummary': getDeckSummary(myDeckIds), 'guest.mulliganDone': false
+                guestId: userId, 
+                status: 'playing', 
+                'guest.deck': guestDeck, 
+                'guest.hand': guestHand, 
+                'guest.maxMana': INITIAL_MANA, 
+                'guest.mana': INITIAL_MANA, 
+                'guest.graveyard': [],
+                'guest.initialDeckSummary': getDeckSummary(useDeck),
+                'guest.mulliganDone': false
             });
+            
             sessionStorage.setItem('duel_room_id', inputRoomId); 
-            setRoomId(inputRoomId); setIsHost(false); setView('game');
-        } else { alert("部屋が見つかりません"); }
+            setRoomId(inputRoomId); 
+            setIsHost(false); 
+            setView('game');
+        } else { 
+            alert("部屋が見つかりません"); 
+        }
     };
 
     return { isDeckValidStrict, startRandomMatch, createRoom, joinRoom };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WifiOff, RefreshCw, XCircle, Crosshair } from 'lucide-react';
-import { auth } from './config/firebase'; // Config
+import { auth } from './config/firebase'; 
 import { signInAnonymously } from 'firebase/auth';
 
 // --- Hooks ---
@@ -15,14 +15,17 @@ import MenuScreen from './components/screens/MenuScreen';
 import LobbyScreen from './components/screens/LobbyScreen';
 import GameScreen from './components/screens/GameScreen';
 import ResultScreen from './components/screens/ResultScreen';
-import CoinTossScreen from './components/screens/CoinTossScreen'; // ★追加
-import MulliganScreen from './components/screens/MulliganScreen'; // ★追加
+import CoinTossScreen from './components/screens/CoinTossScreen';
+import MulliganScreen from './components/screens/MulliganScreen';
 import CardDetailModal from './components/game/CardDetailModal';
-import DeckBuilder from './components/screens/DeckBuilder';
 import Card from './components/game/Card';
 import AimingOverlay from './components/game/AimingOverlay';
 
-import { DECK_SIZE, MAX_COPIES_IN_DECK } from './data/rules';
+// ★新画面コンポーネント (作成した3つのファイル)
+import DeckSelectionScreen from './components/screens/DeckSelectionScreen';
+import ClassSelectionScreen from './components/screens/ClassSelectionScreen';
+import DeckBuilderScreen from './components/screens/DeckBuilderScreen';
+
 import { getCard, generateId } from './utils/helpers';
 
 // Error Boundary
@@ -40,18 +43,26 @@ export default function App() {
   // 1. Basic State
   const [userId, setUserId] = useState(null); 
   const [view, setView] = useState('menu'); 
-  const [myDeckIds, setMyDeckIds] = useState([]);
   const [roomId, setRoomId] = useState("");
   const [isHost, setIsHost] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(null);
   
+  // ★デッキ管理用のState
+  const [myDeckIds, setMyDeckIds] = useState([]); // 対戦で使うデッキ
+  const [decks, setDecks] = useState(() => {
+      try {
+          return JSON.parse(localStorage.getItem('my_decks')) || [];
+      } catch { return []; }
+  });
+  const [editingDeck, setEditingDeck] = useState(null);
+  const [selectedClassForNewDeck, setSelectedClassForNewDeck] = useState(null);
+
   // UI State
   const [detailCard, setDetailCard] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [aimingState, setAimingState] = useState(null); 
   const [targetingHandCard, setTargetingHandCard] = useState(null);
   const isRightClickHeld = useRef(false);
-  const isDeckInitialized = useRef(false);
 
   // Derived State
   const myRole = isHost ? 'host' : 'guest';
@@ -64,27 +75,16 @@ export default function App() {
 
   const isMyTurn = gameData && gameData.currentTurn === myRole;
   
-  // ★変更: フェイズロック条件に coin_toss と mulligan を追加
-  // mulligan を削除！coin_toss (演出中) はロックしたままでOK！
-const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 'switching'].includes(gameData.turnPhase);
+  const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 'switching'].includes(gameData.turnPhase);
 
   // Game Logic Hooks
   useGameLoop(gameData, roomId, myRole, enemyRole, isMyTurn);
 
   useEffect(() => {
       if (!gameData) return;
-
-      if (gameData.status === 'finished' && view !== 'result') {
-          setView('result');
-      }
-      
-      if (gameData.status === 'playing' && view !== 'game') {
-          setView('game');
-      }
-
-      if (gameData.status === 'waiting' && view !== 'lobby') {
-          setView('lobby');
-      }
+      if (gameData.status === 'finished' && view !== 'result') setView('result');
+      if (gameData.status === 'playing' && view !== 'game') setView('game');
+      if (gameData.status === 'waiting' && view !== 'lobby') setView('lobby');
   }, [gameData, view]);
 
   const gameActions = useGameActions({
@@ -96,7 +96,6 @@ const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 's
       userId, myDeckIds, setRoomId, setIsHost, setView
   );
 
-  // ★追加: UI Control Hook
   const controls = useGameControls({
       gameData, myRole, view, isPhaseLocked,
       targetingHandCard, setTargetingHandCard,
@@ -109,7 +108,7 @@ const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 's
   });
 
   // 3. Initial Setup
-  React.useEffect(() => {
+  useEffect(() => {
     let sId = sessionStorage.getItem('duel_session_id');
     if (!sId) { sId = generateId(); sessionStorage.setItem('duel_session_id', sId); }
     setUserId(sId);
@@ -117,16 +116,36 @@ const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 's
     if (savedRoomId) { setRoomId(savedRoomId); }
     const initAuth = async () => { if (auth) await signInAnonymously(auth); };
     initAuth();
-    const loadDeck = () => { 
-        const savedDeck = localStorage.getItem('my_duel_deck'); 
-        if (savedDeck) { try { setMyDeckIds(JSON.parse(savedDeck)); } catch (e) {} } 
-        isDeckInitialized.current = true; 
-    };
-    if (!isDeckInitialized.current) loadDeck();
   }, []);
 
   const handleBackToTitle = () => {
       setRoomId(""); setIsHost(false); setGameData(null); sessionStorage.removeItem('duel_room_id'); setView('menu');
+  };
+
+  // --- デッキ操作関数 ---
+  const handleSaveDeck = (newDeck) => {
+      let newDecks = [...decks];
+      const idx = newDecks.findIndex(d => d.id === newDeck.id);
+      if (idx > -1) {
+          newDecks[idx] = newDeck;
+      } else {
+          newDecks.push(newDeck);
+      }
+      setDecks(newDecks);
+      localStorage.setItem('my_decks', JSON.stringify(newDecks));
+      setView('deck-selection');
+  };
+
+  const handleDeleteDeck = (id) => {
+      const newDecks = decks.filter(d => d.id !== id);
+      setDecks(newDecks);
+      localStorage.setItem('my_decks', JSON.stringify(newDecks));
+  };
+
+  const handleSelectDeckForBattle = (deck) => {
+      setMyDeckIds(deck.cards); // Stateも更新しておく
+      // ★修正版 useMatchmaking を使って、デッキを直接渡して開始！
+      startRandomMatch(deck.cards);
   };
 
   // 4. Render
@@ -159,18 +178,53 @@ const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 's
           
           {notification && ( <div key={notification.key} className={`fixed top-32 z-[100] animate-pop-notification ${notification.side === 'left' ? 'left-20' : 'right-20'}`}> <div className="relative transform scale-150 origin-top"> <Card card={notification.card} location="detail" /> </div> </div> )}
           
-          {/* Screens */}
+          {/* --- Screens --- */}
+          
+          {/* メニュー: 対戦開始 -> デッキ選択画面へ */}
           {view === 'menu' && (
-              <MenuScreen setView={setView} startRandomMatch={startRandomMatch} isDeckValid={isDeckValidStrict(myDeckIds)} />
+              <MenuScreen 
+                  setView={setView} 
+                  startRandomMatch={() => setView('deck-selection')} // 直接マッチングせず、デッキ選択へ
+                  isDeckValid={true} // デッキ選択側でチェックするので常にTrueでOK
+              />
           )}
           
-          {view === 'deck' && (
-              <DeckBuilder 
-                  myDeckIds={myDeckIds} 
-                  setMyDeckIds={setMyDeckIds} 
-                  onBack={() => setView('menu')} 
-                  onContextMenu={controls.handleContextMenu}
-                  onBackgroundClick={controls.handleBackgroundClick}
+          {/* ★デッキ選択画面 */}
+          {(view === 'deck-selection' || view === 'deck') && (
+              <DeckSelectionScreen 
+                  decks={decks}
+                  onNewDeck={() => setView('class-selection')}
+                  onEditDeck={(deck) => {
+                      setEditingDeck(deck);
+                      setView('deck-builder');
+                  }}
+                  onSelectDeckForBattle={handleSelectDeckForBattle}
+                  onDeleteDeck={handleDeleteDeck}
+                  onBack={() => setView('menu')}
+              />
+          )}
+
+          {/* ★クラス選択画面 */}
+          {view === 'class-selection' && (
+              <ClassSelectionScreen 
+                  onSelectClass={(cls) => {
+                      setSelectedClassForNewDeck(cls);
+                      setEditingDeck(null); // 新規
+                      setView('deck-builder');
+                  }}
+                  onBack={() => setView('deck-selection')}
+              />
+          )}
+
+          {/* ★デッキ構築画面 */}
+          {view === 'deck-builder' && (
+              <DeckBuilderScreen 
+                  initialDeck={editingDeck}
+                  selectedClass={selectedClassForNewDeck}
+                  onSaveDeck={handleSaveDeck}
+                  onBack={() => setView('deck-selection')}
+                  // ★これを追加！
+                  onContextMenu={controls.handleContextMenu} 
               />
           )}
           
@@ -178,12 +232,10 @@ const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 's
               <LobbyScreen roomId={roomId} createRoom={createRoom} joinRoom={joinRoom} onCancel={handleBackToTitle} />
           )}
           
-          {/* ★追加: コイントス画面 */}
           {view === 'game' && gameData?.turnPhase === 'coin_toss' && (
              <CoinTossScreen isMyTurn={isMyTurn} />
           )}
 
-          {/* ★追加: マリガン画面 */}
           {view === 'game' && gameData?.turnPhase === 'mulligan' && (
              <MulliganScreen 
                 hand={gameData[myRole].hand} 
@@ -203,7 +255,6 @@ const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 's
                   attackingState={attackingState}
                   selectedUnit={selectedUnit}
                   isDragging={isDragging}
-                  // Actions & Controls
                   handleTargetSelection={gameActions.handleTargetSelection}
                   handleSurrender={gameActions.handleSurrender}
                   handleBoardDragStart={controls.handleBoardDragStart}
