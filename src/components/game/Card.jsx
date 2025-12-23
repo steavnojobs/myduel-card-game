@@ -28,6 +28,8 @@ const Card = ({
   const prevHpRef = useRef(card.currentHp !== undefined ? card.currentHp : card.health);
 
   useEffect(() => {
+    if (card.type !== 'unit' && card.type !== 'building') return;
+    if (typeof card.currentHp === 'undefined') return; // 念のためこれも
     const currentHp = card.currentHp !== undefined ? card.currentHp : card.health;
     const diff = currentHp - prevHpRef.current;
     if (diff !== 0 && (location === 'board' || location === 'hand')) {
@@ -37,7 +39,7 @@ const Card = ({
       return () => clearTimeout(timer);
     }
     prevHpRef.current = currentHp;
-  }, [card.currentHp, card.health, location]);
+  }, [card.currentHp, card.health, location, card.type]);
 
   useEffect(() => {
     if (location === 'board') {
