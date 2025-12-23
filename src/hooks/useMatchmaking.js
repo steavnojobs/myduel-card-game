@@ -3,6 +3,7 @@ import { db } from '../config/firebase';
 import { INITIAL_HP, INITIAL_MANA, DECK_SIZE, MAX_COPIES_IN_DECK } from '../data/rules';
 import { MANA_COIN } from '../data/cards';
 import { generateId, getCard, getDeckSummary, shuffleDeck } from '../utils/helpers';
+import { serverTimestamp, Timestamp } from 'firebase/firestore';
 
 const appId = 'my-card-game'; 
 
@@ -81,11 +82,15 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         const drawnIds = hostDeck.splice(0, drawCount);
         const hostHand = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
         
+        const expireDate = new Date();
+        expireDate.setHours(expireDate.getHours() + 24);
+
         const initialData = { 
             hostId: userId, 
             guestId: null, 
             status: 'waiting', 
-            createdAt: Date.now(), 
+            createdAt: Date.now(),
+            expireAt: Timestamp.fromDate(expireDate),
             turnCount: 1, 
             currentTurn: firstTurn, 
             turnPhase: 'coin_toss', 
