@@ -65,14 +65,18 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         const newRoomId = generateId().substring(0, 6).toUpperCase(); 
         const roomRef = getRoomRef(newRoomId);
         
+        // 先行・後攻の決定
         const firstTurn = Math.random() < 0.5 ? 'host' : 'guest'; 
-        const hostDeck = shuffleDeck(useDeck);
         
+        // ホストのデッキと手札準備
+        const hostDeck = shuffleDeck(useDeck);
+        // 先行なら3枚、後攻なら4枚
         const drawCount = firstTurn === 'host' ? 3 : 4;
         const drawnIds = hostDeck.splice(0, drawCount);
         const hostHand = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
+
+        // ★削除: ここでのマナコイン追加は削除しました（useGameLoopへ移動）
         
-        // 24時間後に削除するための設定
         const expireDate = new Date();
         expireDate.setHours(expireDate.getHours() + 24);
 
@@ -81,10 +85,10 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
             guestId: null, 
             status: 'waiting', 
             createdAt: Date.now(), 
-            expireAt: Timestamp.fromDate(expireDate), // TTL用
+            expireAt: Timestamp.fromDate(expireDate),
             turnCount: 1, 
             currentTurn: firstTurn, 
-            turnPhase: 'coin_toss', // ★重要！ここを 'coin_toss' にする！
+            turnPhase: 'coin_toss', 
             lastAction: null, 
             host: { 
                 hp: INITIAL_HP, 
@@ -129,9 +133,12 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
             
             const guestDeck = shuffleDeck(useDeck); 
             
+            // ゲストの手札枚数: 自分が先行(hostが後攻)なら3枚、自分が後攻(hostが先行)なら4枚
             const drawCount = data.currentTurn === 'guest' ? 3 : 4;
             const drawnIds = guestDeck.splice(0, drawCount);
             const guestHand = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
+            
+            // ★削除: ここでのマナコイン追加は削除しました（useGameLoopへ移動）
             
             await updateDoc(roomRef, { 
                 guestId: userId, 

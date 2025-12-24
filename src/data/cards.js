@@ -266,9 +266,9 @@ export const CARD_DATABASE = [
     "cost": 8,
     "attack": 7,
     "health": 8,
-    "description": "【スペル使用時】ランダムな相手のユニットを破壊する。",
-    "onSpellCast": {
-      "type": "destroy_random",
+    "description": "【登場時】相手のユニットを破壊する。",
+    "onPlay": {
+      "type": "destroy_unit",
       "target": "enemy_unit"
     }
   },
@@ -1346,7 +1346,6 @@ export const CARD_DATABASE = [
   },
   {
     "id": 1000,
-    "class": "Aqua",
     "type": "spell",
     "name": "クイックスペル",
     "cost": 1,

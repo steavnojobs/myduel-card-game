@@ -1,6 +1,7 @@
-import { getCard, generateId, shuffleDeck } from './helpers'; 
-import { MAX_BOARD_SIZE } from '../data/rules';
+import { MAX_HAND_SIZE, MAX_BOARD_SIZE } from '../data/rules'; // ★定数を追加
+import { generateId, getCard } from '../utils/helpers'; // ★重複なしで1行でインポート
 
+// ユニット生成
 export const createUnit = (cardId, ownerPrefix) => {
     const cardData = getCard(cardId);
     if (!cardData) return null;
@@ -19,6 +20,7 @@ export const createUnit = (cardId, ownerPrefix) => {
     };
 };
 
+// ダメージ適用
 export const applyDamage = (unit, amount) => {
     if (amount <= 0) return unit; 
     if (unit.divineShield) {
@@ -29,6 +31,7 @@ export const applyDamage = (unit, amount) => {
     }
 };
 
+// ターゲット解決 (内部用)
 const resolveTarget = (targetUid, me, enemy, updates, rolePrefix, enemyPrefix, mode = 'any') => {
     const currentEnemyBoard = updates[`${enemyPrefix}.board`] || enemy.board;
     const currentMeBoard = updates[`${rolePrefix}.board`] || me.board;
@@ -62,23 +65,45 @@ const resolveTarget = (targetUid, me, enemy, updates, rolePrefix, enemyPrefix, m
     return { targetUnit, targetBoard, updateKey, isEnemy };
 };
 
-export const handleDraw = (deck, hand, board, updates, role, gameData) => {
-    if (deck.length === 0) return { deck, hand }; 
-    const cardId = deck.shift();
-    const newCard = { ...getCard(cardId), id: cardId, uid: generateId() };
-    if (hand.length < 10) { hand.push(newCard); } 
-    else { console.log("Hand is full! Card burned:", newCard.name); return { deck, hand }; }
-
-    if (board && Array.isArray(board)) {
-        board.forEach(unit => {
-            if (unit.onDrawTrigger) {
-                processEffect(unit.onDrawTrigger, gameData[role], gameData[role === 'host' ? 'guest' : 'host'], updates, role, role === 'host' ? 'guest' : 'host', gameData, unit.uid);
-            }
-        });
+// ドロー処理 (燃焼ロジック付き🔥)
+export const handleDraw = (deck, hand, board, updates, playerRole, gameData) => {
+    // 1. デッキ切れチェック
+    if (deck.length === 0) {
+        console.log("Deck is empty!");
+        return { deck, hand };
     }
-    return { deck, hand };
+
+    // 2. カードを1枚引く
+    const cardId = deck[0]; 
+    const newDeck = deck.slice(1); 
+
+    const originalCard = getCard(cardId);
+    if (!originalCard) return { deck: newDeck, hand }; // エラー回避
+
+    const newCard = { ...originalCard, uid: generateId() };
+
+    let newHand = [...hand];
+    let burned = false;
+
+    // 3. 手札上限チェック
+    if (hand.length >= MAX_HAND_SIZE) {
+        console.log(`Hand is full! Burned card: ${newCard.name}`);
+        burned = true;
+
+        // 墓地に追加
+        const currentGraveyard = gameData[playerRole].graveyard || [];
+        updates[`${playerRole}.graveyard`] = [...currentGraveyard, newCard];
+        
+        updates.lastAction = `カード燃焼: ${newCard.name}`;
+    } else {
+        // 4. 手札に加える
+        newHand.push(newCard);
+    }
+
+    return { deck: newDeck, hand: newHand, burned };
 };
 
+// 効果処理
 export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefix, latestGameData, sourceUnitUid = null, targetUnitUid = null) => {
     if (!effect || !me || !enemy || !latestGameData) return "";
     if (Array.isArray(effect)) {
@@ -92,35 +117,23 @@ export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefi
     const currentMeBoard = updates[`${rolePrefix}.board`] || me.board;
 
     switch(effect.type) {
-        // --- ★追加: 蘇生効果 ---
         case 'resurrect': {
-            // 現在の墓地を取得 (updatesにあればそれを、なければ現在のデータから)
             const currentGraveyard = updates[`${rolePrefix}.graveyard`] || me.graveyard || [];
-            
             if (currentGraveyard.length === 0) {
                 logMsg = "⚠️ 墓地にユニットがいません！";
                 break;
             }
-
-            // 指定コスト以下で検索 (x以下の最大コストを探す)
-            let maxCost = effect.value; // x以下
+            let maxCost = effect.value; 
             let targetCard = null;
-
-            // コストを下げながら探索
             for (let cost = maxCost; cost >= 0; cost--) {
-                // そのコストのユニットのみ抽出 (建物は除外？今回はunit全て対象と仮定)
                 const candidates = currentGraveyard.filter(c => c.cost === cost && c.type === 'unit');
-                
                 if (candidates.length > 0) {
-                    // ランダムに1つ選ぶ
                     targetCard = candidates[Math.floor(Math.random() * candidates.length)];
-                    break; // 見つかったら終了
+                    break;
                 }
             }
-
             if (targetCard) {
                 if (currentMeBoard.length < MAX_BOARD_SIZE) {
-                    // 墓地から削除せず、コピーを作成して場に出す
                     const resurrectedUnit = createUnit(targetCard.id, rolePrefix);
                     if (resurrectedUnit) {
                         updates[`${rolePrefix}.board`] = [...currentMeBoard, resurrectedUnit];
@@ -326,7 +339,7 @@ export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefi
                  if (targetUnit && targetUnit.type !== 'building') { 
                      updates[updateKey] = updates[updateKey].filter(u => u.uid !== targetUnit.uid); 
                      let targetHand = updates[`${enemyPrefix}.hand`] || enemy.hand;
-                     if (targetHand.length < 10) {
+                     if (targetHand.length < MAX_HAND_SIZE) { // ここも定数でチェック
                          targetHand = [...targetHand, { ...getCard(targetUnit.id), uid: generateId() }];
                          updates[`${enemyPrefix}.hand`] = targetHand;
                      }
@@ -338,7 +351,7 @@ export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefi
                  if (myself) {
                      updates[`${rolePrefix}.board`] = currentMeBoard.filter(u => u.uid !== sourceUnitUid);
                      let myHand = updates[`${rolePrefix}.hand`] || me.hand;
-                     if (myHand.length < 10) {
+                     if (myHand.length < MAX_HAND_SIZE) { // ここも定数でチェック
                          myHand = [...myHand, { ...getCard(myself.id), uid: generateId() }];
                          updates[`${rolePrefix}.hand`] = myHand;
                      }
@@ -375,9 +388,11 @@ export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefi
         }
         case 'generate_card': {
             let tempHand = [...(updates[`${rolePrefix}.hand`] || me.hand)];
-            if (tempHand.length < 10) {
+            if (tempHand.length < MAX_HAND_SIZE) {
                 const newCard = getCard(effect.value || effect.cardId);
                 if (newCard) { tempHand.push({ ...newCard, uid: generateId() }); updates[`${rolePrefix}.hand`] = tempHand; logMsg = `🃏 ${newCard.name}を手札に追加！`; }
+            } else {
+                logMsg = `⚠️ 手札がいっぱいでカードを生成できません！`;
             }
             break;
         }

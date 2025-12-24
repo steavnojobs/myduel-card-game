@@ -3,6 +3,8 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { processEffect, handleDraw } from '../utils/gameLogic';
 import { EFFECT_DELAY } from '../data/rules';
+import { MANA_COIN } from '../data/cards'; // ★追加: マナコイン
+import { generateId, getCard } from '../utils/helpers'; // ★追加: getCardも念のため
 
 const appId = 'my-card-game'; 
 
@@ -25,10 +27,25 @@ export const useGameLoop = (gameData, roomId, myRole, enemyRole, isMyTurn) => {
             // マリガン完了チェック
             if (gameData.turnPhase === 'mulligan') {
                 if (gameData.host.mulliganDone && gameData.guest.mulliganDone) {
-                    console.log("Both players finished mulligan! Starting game...");
+                    console.log("Both players finished mulligan! Distributing Coin & Starting game...");
                     isProcessingPhase.current = true;
+                    
                     setTimeout(async () => {
-                         await updateDoc(roomRef, { turnPhase: 'start_effect' });
+                         // ★ここで後攻プレイヤーにマナコインを配る！
+                         const secondPlayer = gameData.currentTurn === 'host' ? 'guest' : 'host';
+                         const coinCard = MANA_COIN ? { ...MANA_COIN } : getCard(9001);
+                         
+                         // 後攻の手札にコインを追加 (ユニークIDを付与)
+                         const newHand = [
+                             ...gameData[secondPlayer].hand, 
+                             { ...coinCard, uid: generateId() }
+                         ];
+
+                         await updateDoc(roomRef, { 
+                             turnPhase: 'start_effect',
+                             [`${secondPlayer}.hand`]: newHand // ★コイン追加！
+                         });
+                         
                          isProcessingPhase.current = false;
                     }, 1000);
                 }
@@ -121,13 +138,15 @@ export const useGameLoop = (gameData, roomId, myRole, enemyRole, isMyTurn) => {
             else if (gameData.turnPhase === 'switching'){
                 const nextTurn = enemyRole;
                 const nextTurnCount = gameData.turnCount + 1;
-                const nextMaxMana = Math.min(gameData[nextTurn].maxMana + 1, 10);
-
+                
+                // ★マナ自動増加(+1)は削除済み（全回復のみ）
+                const nextMaxMana = gameData[nextTurn].maxMana; 
+                
                 updates.currentTurn = nextTurn; 
                 updates.turnPhase = 'start_effect';
                 updates.turnCount = nextTurnCount;
                 updates[`${nextTurn}.maxMana`] = nextMaxMana;
-                updates[`${nextTurn}.mana`] = nextMaxMana;
+                updates[`${nextTurn}.mana`] = nextMaxMana; 
 
                 await updateDoc(roomRef, updates);
             } 
@@ -157,14 +176,11 @@ export const useGameLoop = (gameData, roomId, myRole, enemyRole, isMyTurn) => {
                 const currentMyBoard = updates[`${myRole}.board`];
                 if (currentMyBoard) updates[`${myRole}.board`] = currentMyBoard.filter(u => u.currentHp > 0);
 
-                // strategy フェーズへ進める
                 updates.turnPhase = 'strategy';
                 await updateDoc(roomRef, updates);
             } 
-            // --- ★修正: 戦略フェイズ (Strategy Phase) ---
+            // --- 戦略フェイズ (Strategy Phase) ---
             else if (gameData.turnPhase === 'strategy') {
-                // 自動進行を停止！！
-                // プレイヤーが選択して turnPhase を 'draw_phase' に変えるのを待つよ！
                 console.log("Waiting for strategy selection...");
                 return; 
             }
