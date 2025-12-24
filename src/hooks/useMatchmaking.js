@@ -1,9 +1,7 @@
-import { collection, query, where, limit, getDocs, doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, limit, getDocs, doc, setDoc, updateDoc, getDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { INITIAL_HP, INITIAL_MANA, DECK_SIZE, MAX_COPIES_IN_DECK } from '../data/rules';
-import { MANA_COIN } from '../data/cards';
 import { generateId, getCard, getDeckSummary, shuffleDeck } from '../utils/helpers';
-import { serverTimestamp, Timestamp } from 'firebase/firestore';
 
 const appId = 'my-card-game'; 
 
@@ -23,11 +21,8 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         return true;
     };
 
-    // ★修正: 引数(deckOverride)を受け取れるように変更！
     const startRandomMatch = async (deckOverride = null) => {
         if (!userId) return; 
-        
-        // 引数がなければ state の myDeckIds を使う
         const currentDeck = deckOverride || myDeckIds;
 
         if (!currentDeck || currentDeck.length === 0) {
@@ -53,12 +48,8 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
             }
             
             if (targetRoomId) { 
-                console.log("Found room:", targetRoomId); 
-                // 引数のデッキを使って参加
                 await joinRoom(targetRoomId, currentDeck); 
             } else { 
-                console.log("No room found, creating new one..."); 
-                // 引数のデッキを使って作成
                 await createRoom(currentDeck); 
             }
         } catch (error) { 
@@ -67,9 +58,8 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         }
     };
 
-    // ★修正: 引数でデッキを受け取る
     const createRoom = async (deckOverride = null) => {
-        const useDeck = deckOverride || myDeckIds; // 優先使用
+        const useDeck = deckOverride || myDeckIds;
         if (!userId || useDeck.length === 0) return;
         
         const newRoomId = generateId().substring(0, 6).toUpperCase(); 
@@ -82,6 +72,7 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         const drawnIds = hostDeck.splice(0, drawCount);
         const hostHand = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
         
+        // 24時間後に削除するための設定
         const expireDate = new Date();
         expireDate.setHours(expireDate.getHours() + 24);
 
@@ -89,11 +80,11 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
             hostId: userId, 
             guestId: null, 
             status: 'waiting', 
-            createdAt: Date.now(),
-            expireAt: Timestamp.fromDate(expireDate),
+            createdAt: Date.now(), 
+            expireAt: Timestamp.fromDate(expireDate), // TTL用
             turnCount: 1, 
             currentTurn: firstTurn, 
-            turnPhase: 'coin_toss', 
+            turnPhase: 'coin_toss', // ★重要！ここを 'coin_toss' にする！
             lastAction: null, 
             host: { 
                 hp: INITIAL_HP, 
@@ -125,9 +116,8 @@ export const useMatchmaking = (userId, myDeckIds, setRoomId, setIsHost, setView)
         setView('lobby');
     };
 
-    // ★修正: 引数でデッキを受け取る
     const joinRoom = async (inputRoomId, deckOverride = null) => {
-        const useDeck = deckOverride || myDeckIds; // 優先使用
+        const useDeck = deckOverride || myDeckIds;
         if (!userId || !inputRoomId || useDeck.length === 0) return;
         
         const roomRef = getRoomRef(inputRoomId); 

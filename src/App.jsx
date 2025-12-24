@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { WifiOff, RefreshCw, XCircle, Crosshair } from 'lucide-react';
-import { auth } from './config/firebase'; 
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Crosshair, XCircle } from 'lucide-react'; 
+import { auth, db } from './config/firebase'; 
 import { signInAnonymously } from 'firebase/auth';
+import { doc, updateDoc } from 'firebase/firestore'; 
 
 // --- Hooks ---
 import { useMatchmaking } from './hooks/useMatchmaking';
@@ -21,12 +22,12 @@ import CardDetailModal from './components/game/CardDetailModal';
 import Card from './components/game/Card';
 import AimingOverlay from './components/game/AimingOverlay';
 
-// ★新画面コンポーネント (作成した3つのファイル)
+// ★新画面コンポーネント
 import DeckSelectionScreen from './components/screens/DeckSelectionScreen';
 import ClassSelectionScreen from './components/screens/ClassSelectionScreen';
 import DeckBuilderScreen from './components/screens/DeckBuilderScreen';
 
-import { getCard, generateId } from './utils/helpers';
+import { generateId } from './utils/helpers';
 
 // Error Boundary
 class ErrorBoundary extends React.Component {
@@ -48,7 +49,7 @@ export default function App() {
   const [selectedUnit, setSelectedUnit] = useState(null);
   
   // ★デッキ管理用のState
-  const [myDeckIds, setMyDeckIds] = useState([]); // 対戦で使うデッキ
+  const [myDeckIds, setMyDeckIds] = useState([]); 
   const [decks, setDecks] = useState(() => {
       try {
           return JSON.parse(localStorage.getItem('my_decks')) || [];
@@ -70,11 +71,10 @@ export default function App() {
 
   // 2. Custom Hooks Initialization
   const { 
-      gameData, setGameData, isConnectionUnstable, notification, attackingState, setAttackingState 
+      gameData, setGameData, notification, attackingState, setAttackingState 
   } = useGameSync(roomId, userId, myRole);
 
   const isMyTurn = gameData && gameData.currentTurn === myRole;
-  
   const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 'switching'].includes(gameData.turnPhase);
 
   // Game Logic Hooks
@@ -82,10 +82,16 @@ export default function App() {
 
   useEffect(() => {
       if (!gameData) return;
+
+      // ★追加: リロード対策！自分がホストかどうか再確認する！
+      if (userId && gameData.hostId === userId) {
+          setIsHost(true);
+      }
+
       if (gameData.status === 'finished' && view !== 'result') setView('result');
       if (gameData.status === 'playing' && view !== 'game') setView('game');
       if (gameData.status === 'waiting' && view !== 'lobby') setView('lobby');
-  }, [gameData, view]);
+  }, [gameData, view, userId]); // ★依存配列に userId も追加してね！
 
   const gameActions = useGameActions({
       gameData, myRole, enemyRole, isMyTurn, roomId, isPhaseLocked, 
@@ -126,11 +132,7 @@ export default function App() {
   const handleSaveDeck = (newDeck) => {
       let newDecks = [...decks];
       const idx = newDecks.findIndex(d => d.id === newDeck.id);
-      if (idx > -1) {
-          newDecks[idx] = newDeck;
-      } else {
-          newDecks.push(newDeck);
-      }
+      if (idx > -1) { newDecks[idx] = newDeck; } else { newDecks.push(newDeck); }
       setDecks(newDecks);
       localStorage.setItem('my_decks', JSON.stringify(newDecks));
       setView('deck-selection');
@@ -143,16 +145,33 @@ export default function App() {
   };
 
   const handleSelectDeckForBattle = (deck) => {
-      setMyDeckIds(deck.cards); // Stateも更新しておく
-      // ★修正版 useMatchmaking を使って、デッキを直接渡して開始！
+      setMyDeckIds(deck.cards); 
       startRandomMatch(deck.cards);
   };
+
+  // デッキ構築画面用の右クリックハンドラ
+  const handleDeckCardMouseDown = (e, card) => {
+    if (e.button === 2) { setDetailCard(card); }
+  };
+  const handleDeckCardMouseUp = () => { setDetailCard(null); };
+
+  // コイントス終了時の処理
+  const handleCoinTossEnd = useCallback(async () => {
+    // ホストの人だけがデータベースを更新してフェーズを進めるよ！
+    if (isHost && roomId) {
+        console.log("Coin toss finished! Moving to mulligan..."); // ログも出してみよう
+        const roomRef = doc(db, 'artifacts', 'my-card-game', 'public', 'data', 'rooms', `room_${roomId}`);
+        await updateDoc(roomRef, { turnPhase: 'mulligan' });
+    }
+  }, [isHost, roomId]); // roomId か isHost が変わった時だけ作り直す
 
   // 4. Render
   return (
       <ErrorBoundary>
+          {/* ★修正: Game以外（デッキ構築含む）はこっちのモーダルを使う！ */}
           {view !== 'game' && <CardDetailModal detailCard={detailCard} onClose={() => setDetailCard(null)} />}
           
+          {/* ★修正: オーバーレイはGame画面専用にする！ */}
           {view === 'game' && detailCard && (
               <div className="fixed top-4 left-4 z-[9999] pointer-events-none animate-in fade-in zoom-in duration-200 shadow-2xl rounded-xl overflow-hidden ring-4 ring-yellow-500/50">
                   <div className="bg-slate-900/90 backdrop-blur-sm p-4 rounded-xl">
@@ -174,22 +193,20 @@ export default function App() {
               </div>
           )}
           
-          {isConnectionUnstable && ( <div className="fixed top-20 right-4 z-[100] bg-red-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce cursor-pointer" onClick={() => window.location.reload()}><WifiOff size={20} /> <span className="text-xs font-bold">通信不安定！タップして再接続</span> <RefreshCw size={16} /></div> )}
+          {/* ポップアップ削除済み (OK!) */}
           
           {notification && ( <div key={notification.key} className={`fixed top-32 z-[100] animate-pop-notification ${notification.side === 'left' ? 'left-20' : 'right-20'}`}> <div className="relative transform scale-150 origin-top"> <Card card={notification.card} location="detail" /> </div> </div> )}
           
           {/* --- Screens --- */}
           
-          {/* メニュー: 対戦開始 -> デッキ選択画面へ */}
           {view === 'menu' && (
               <MenuScreen 
                   setView={setView} 
-                  startRandomMatch={() => setView('deck-selection')} // 直接マッチングせず、デッキ選択へ
-                  isDeckValid={true} // デッキ選択側でチェックするので常にTrueでOK
+                  startRandomMatch={() => setView('deck-selection')}
+                  isDeckValid={true}
               />
           )}
           
-          {/* ★デッキ選択画面 */}
           {(view === 'deck-selection' || view === 'deck') && (
               <DeckSelectionScreen 
                   decks={decks}
@@ -204,7 +221,6 @@ export default function App() {
               />
           )}
 
-          {/* ★クラス選択画面 */}
           {view === 'class-selection' && (
               <ClassSelectionScreen 
                   onSelectClass={(cls) => {
@@ -216,15 +232,14 @@ export default function App() {
               />
           )}
 
-          {/* ★デッキ構築画面 */}
           {view === 'deck-builder' && (
               <DeckBuilderScreen 
                   initialDeck={editingDeck}
                   selectedClass={selectedClassForNewDeck}
                   onSaveDeck={handleSaveDeck}
                   onBack={() => setView('deck-selection')}
-                  // ★これを追加！
-                  onContextMenu={controls.handleContextMenu} 
+                  onCardMouseDown={handleDeckCardMouseDown}
+                  onCardMouseUp={handleDeckCardMouseUp}
               />
           )}
           
@@ -233,7 +248,7 @@ export default function App() {
           )}
           
           {view === 'game' && gameData?.turnPhase === 'coin_toss' && (
-             <CoinTossScreen isMyTurn={isMyTurn} />
+             <CoinTossScreen isMyTurn={isMyTurn} onComplete={handleCoinTossEnd} />
           )}
 
           {view === 'game' && gameData?.turnPhase === 'mulligan' && (

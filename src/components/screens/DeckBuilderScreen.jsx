@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Sword, Zap, Castle, Layers, ChevronLeft, Save, Trash2 } from 'lucide-react'; // ★Trash2を追加
+import { Sword, Zap, Castle, Layers, ChevronLeft, Save, Trash2 } from 'lucide-react'; 
 import { CARD_DATABASE } from '../../data/cards';
 import { DECK_SIZE, MAX_COPIES_IN_DECK } from '../../data/rules';
 import Card from '../game/Card';
@@ -9,7 +9,8 @@ export default function DeckBuilderScreen({
     selectedClass, 
     onSaveDeck, 
     onBack,
-    onContextMenu
+    onCardMouseDown, // ★変更: 詳細表示開始用
+    onCardMouseUp    // ★変更: 詳細表示終了用
 }) {
     const [deckName, setDeckName] = useState(initialDeck ? initialDeck.name : "新しいデッキ");
     const [currentClass] = useState(initialDeck ? initialDeck.class : selectedClass);
@@ -93,7 +94,7 @@ export default function DeckBuilderScreen({
         }
     };
 
-    // ★追加: デッキ全削除（クリア）処理
+    // デッキ全削除（クリア）処理
     const handleClearDeck = () => {
         if (deckCards.length === 0) return;
         if (window.confirm("デッキの内容を全て削除しますか？")) {
@@ -126,7 +127,12 @@ export default function DeckBuilderScreen({
     const isDeckComplete = deckCards.length === DECK_SIZE;
 
     return (
-        <div className="flex h-screen bg-slate-900 text-white overflow-hidden font-sans" onContextMenu={(e) => e.preventDefault()}>
+        <div 
+            className="flex h-screen bg-slate-900 text-white overflow-hidden font-sans" 
+            // ★追加: 右クリックメニュー無効 & どこで離しても詳細OFF
+            onContextMenu={(e) => e.preventDefault()}
+            onMouseUp={onCardMouseUp}
+        >
             
             {/* --- 左側: カードプール --- */}
             <div className="w-2/3 flex flex-col bg-slate-950 border-r border-slate-700">
@@ -202,7 +208,8 @@ export default function DeckBuilderScreen({
                                     key={card.id} 
                                     className={`relative group cursor-pointer transition-all duration-200 ${isMax ? 'opacity-50 grayscale' : 'hover:scale-105 hover:z-10'}`} 
                                     onClick={() => addCard(card.id)}
-                                    onContextMenu={(e) => onContextMenu && onContextMenu(e, card)}
+                                    // ★変更: 右クリック(MouseDown)で詳細表示
+                                    onMouseDown={(e) => onCardMouseDown && onCardMouseDown(e, card)}
                                 >
                                     <div className="origin-top-left pointer-events-none">
                                         <Card 
@@ -237,7 +244,6 @@ export default function DeckBuilderScreen({
                             className="flex-1 bg-transparent text-2xl font-black border-b border-slate-600 focus:border-blue-500 outline-none pb-2 text-white placeholder-slate-600 tracking-wider"
                             placeholder="デッキ名を入力..."
                         />
-                        {/* ★追加: 全削除ボタン */}
                         <button 
                             onClick={handleClearDeck}
                             className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
@@ -335,7 +341,8 @@ export default function DeckBuilderScreen({
                             <div 
                                 key={cardId} 
                                 onClick={() => removeCard(cardId)}
-                                onContextMenu={(e) => onContextMenu && onContextMenu(e, card)}
+                                // ★変更: リスト内カードも右クリック(MouseDown)で詳細表示
+                                onMouseDown={(e) => onCardMouseDown && onCardMouseDown(e, card)}
                                 className="group flex items-center bg-slate-800/60 hover:bg-red-900/40 cursor-pointer rounded border border-slate-700/50 hover:border-red-500/50 h-10 transition-all relative overflow-hidden"
                             >
                                 <img src={`/images/cards/${cardId}.webp`} className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-10 transition-opacity" />
