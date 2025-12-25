@@ -75,7 +75,8 @@ export default function App() {
   } = useGameSync(roomId, userId, myRole);
 
   const isMyTurn = gameData && gameData.currentTurn === myRole;
-  const isPhaseLocked = gameData && ['coin_toss', 'start_effect', 'end_effect', 'switching'].includes(gameData.turnPhase);
+  // ★修正: ゲーム画面にいる時だけロックを有効にする！
+  const isPhaseLocked = view === 'game' && gameData && ['coin_toss', 'start_effect', 'end_effect', 'switching'].includes(gameData.turnPhase);
 
   // Game Logic Hooks
   useGameLoop(gameData, roomId, myRole, enemyRole, isMyTurn);

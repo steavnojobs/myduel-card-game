@@ -14,14 +14,10 @@ export default function GameScreen({
 }) {
     const [showGraveyard, setShowGraveyard] = useState(false);
 
-    // --- 墓地の整理整頓ロジック ---
     const processGraveyard = (graveyard) => {
         if (!graveyard || !Array.isArray(graveyard)) return [];
-
-        // 1. IDごとに集計する
         const counts = {};
         const uniqueCards = {};
-
         graveyard.forEach(card => {
             if (!counts[card.id]) {
                 counts[card.id] = 0;
@@ -29,13 +25,11 @@ export default function GameScreen({
             }
             counts[card.id]++;
         });
-
-        // 2. リストにして、コスト順（昇順）に並び替える
         return Object.values(uniqueCards)
             .map(card => ({ ...card, count: counts[card.id] }))
             .sort((a, b) => {
-                if (a.cost !== b.cost) return a.cost - b.cost; // コスト順
-                return a.id - b.id; // 同じならID順
+                if (a.cost !== b.cost) return a.cost - b.cost; 
+                return a.id - b.id; 
             });
     };
 
@@ -96,6 +90,8 @@ export default function GameScreen({
                     onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
                     attackingState={attackingState}
                     targetingHandCard={targetingHandCard}
+                    // ★追加: 墓地やバウンスのエフェクト用にデータを渡す
+                    bouncedUid={gameData.bouncedUid} 
                 />
                 
                 <PlayerConsole 
@@ -104,7 +100,6 @@ export default function GameScreen({
                     onDragStart={handleGameDragStart} onDragEnd={handleGameDragEnd}
                 />
 
-                {/* 墓地アイコン */}
                 <div 
                     className="absolute bottom-40 right-4 w-16 h-16 bg-slate-800/90 border-2 border-slate-600 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 hover:bg-slate-700 transition-all z-20 shadow-xl"
                     onClick={() => setShowGraveyard(true)}
@@ -115,12 +110,10 @@ export default function GameScreen({
                         {gameData[myRole].graveyard?.length || 0}
                     </div>
                 </div>
-
             </div>
             
             <GameSidebar me={gameData[myRole]} enemy={gameData[enemyRole]} />
 
-            {/* 墓地リストのモーダル */}
             {showGraveyard && (
                 <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-8" onClick={() => setShowGraveyard(false)}>
                     <div 
@@ -142,25 +135,15 @@ export default function GameScreen({
                                 ✕
                             </button>
                         </div>
-
-                        {/* カードリスト */}
                         <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 p-2">
                             {sortedGraveyard.map((card, idx) => (
                                 <div key={idx} className="relative group">
                                     <div className="transform transition-transform hover:scale-110 hover:z-20 origin-center">
-                                        <Card 
-                                            card={card} 
-                                            location="library" 
-                                            count={card.count}
-                                            maxCount={999} // ★修正: 絶対にグレーアウトしないように大きい数字を指定！
-                                        />
+                                        <Card card={card} location="library" count={card.count} maxCount={999} />
                                     </div>
-                                    <div className="text-center text-[10px] text-slate-300 mt-1 truncate w-full px-1">
-                                        {card.name}
-                                    </div>
+                                    <div className="text-center text-[10px] text-slate-300 mt-1 truncate w-full px-1">{card.name}</div>
                                 </div>
                             ))}
-                            
                             {sortedGraveyard.length === 0 && (
                                 <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-500">
                                     <span className="text-6xl mb-4 opacity-30">🪦</span>
@@ -171,7 +154,6 @@ export default function GameScreen({
                     </div>
                 </div>
             )}
-
         </div>
     );
 }

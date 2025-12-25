@@ -1,5 +1,5 @@
-import { MAX_HAND_SIZE, MAX_BOARD_SIZE } from '../data/rules'; // ★定数を追加
-import { generateId, getCard } from '../utils/helpers'; // ★重複なしで1行でインポート
+import { MAX_HAND_SIZE, MAX_BOARD_SIZE } from '../data/rules'; 
+import { generateId, getCard } from '../utils/helpers'; 
 
 // ユニット生成
 export const createUnit = (cardId, ownerPrefix) => {
@@ -67,36 +67,29 @@ const resolveTarget = (targetUid, me, enemy, updates, rolePrefix, enemyPrefix, m
 
 // ドロー処理 (燃焼ロジック付き🔥)
 export const handleDraw = (deck, hand, board, updates, playerRole, gameData) => {
-    // 1. デッキ切れチェック
     if (deck.length === 0) {
         console.log("Deck is empty!");
         return { deck, hand };
     }
 
-    // 2. カードを1枚引く
     const cardId = deck[0]; 
     const newDeck = deck.slice(1); 
 
     const originalCard = getCard(cardId);
-    if (!originalCard) return { deck: newDeck, hand }; // エラー回避
+    if (!originalCard) return { deck: newDeck, hand }; 
 
     const newCard = { ...originalCard, uid: generateId() };
 
     let newHand = [...hand];
     let burned = false;
 
-    // 3. 手札上限チェック
     if (hand.length >= MAX_HAND_SIZE) {
         console.log(`Hand is full! Burned card: ${newCard.name}`);
         burned = true;
-
-        // 墓地に追加
         const currentGraveyard = gameData[playerRole].graveyard || [];
         updates[`${playerRole}.graveyard`] = [...currentGraveyard, newCard];
-        
         updates.lastAction = `カード燃焼: ${newCard.name}`;
     } else {
-        // 4. 手札に加える
         newHand.push(newCard);
     }
 
@@ -335,13 +328,23 @@ export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefi
         }
         case 'return_to_hand': {
             if (targetUnitUid) {
-                 const { targetUnit, updateKey } = resolveTarget(targetUnitUid, me, enemy, updates, rolePrefix, enemyPrefix, effect.target);
+                 const { targetUnit, updateKey, isEnemy } = resolveTarget(targetUnitUid, me, enemy, updates, rolePrefix, enemyPrefix, effect.target);
+                 
                  if (targetUnit && targetUnit.type !== 'building') { 
+                     // 1. 盤面から消す
                      updates[updateKey] = updates[updateKey].filter(u => u.uid !== targetUnit.uid); 
-                     let targetHand = updates[`${enemyPrefix}.hand`] || enemy.hand;
-                     if (targetHand.length < MAX_HAND_SIZE) { // ここも定数でチェック
+                     
+                     // ★追加: 画面側に「これはバウンスだよ！」と伝えるフラグ
+                     updates.bouncedUid = targetUnit.uid;
+
+                     // 2. 持ち主の手札に戻す
+                     const ownerPrefix = isEnemy ? enemyPrefix : rolePrefix;
+                     const ownerData = isEnemy ? enemy : me;
+                     
+                     let targetHand = updates[`${ownerPrefix}.hand`] || ownerData.hand;
+                     if (targetHand.length < MAX_HAND_SIZE) { 
                          targetHand = [...targetHand, { ...getCard(targetUnit.id), uid: generateId() }];
-                         updates[`${enemyPrefix}.hand`] = targetHand;
+                         updates[`${ownerPrefix}.hand`] = targetHand;
                      }
                      logMsg = `💨 ${targetUnit.name}を手札に戻した！`;
                  }
@@ -350,8 +353,12 @@ export const processEffect = (effect, me, enemy, updates, rolePrefix, enemyPrefi
                  const myself = currentMeBoard.find(u => u.uid === sourceUnitUid);
                  if (myself) {
                      updates[`${rolePrefix}.board`] = currentMeBoard.filter(u => u.uid !== sourceUnitUid);
+                     
+                     // ★追加: 自分自身を戻す時もフラグ
+                     updates.bouncedUid = sourceUnitUid;
+
                      let myHand = updates[`${rolePrefix}.hand`] || me.hand;
-                     if (myHand.length < MAX_HAND_SIZE) { // ここも定数でチェック
+                     if (myHand.length < MAX_HAND_SIZE) { 
                          myHand = [...myHand, { ...getCard(myself.id), uid: generateId() }];
                          updates[`${rolePrefix}.hand`] = myHand;
                      }
