@@ -91,14 +91,15 @@ export default function App() {
       if (gameData.status === 'finished' && view !== 'result') setView('result');
       if (gameData.status === 'playing' && view !== 'game') setView('game');
       if (gameData.status === 'waiting' && view !== 'lobby') setView('lobby');
-  }, [gameData, view, userId]); // ★依存配列に userId も追加してね！
+  }, [gameData, view, userId]); 
 
   const gameActions = useGameActions({
       gameData, myRole, enemyRole, isMyTurn, roomId, isPhaseLocked, 
       targetingHandCard, setTargetingHandCard, setAttackingState, isHost
   });
 
-  const { isDeckValidStrict, startRandomMatch, createRoom, joinRoom } = useMatchmaking(
+  // ★ここで cancelRoom も受け取る！
+  const { isDeckValidStrict, startRandomMatch, createRoom, joinRoom, cancelRoom } = useMatchmaking(
       userId, myDeckIds, setRoomId, setIsHost, setView
   );
 
@@ -124,8 +125,20 @@ export default function App() {
     initAuth();
   }, []);
 
-  const handleBackToTitle = () => {
-      setRoomId(""); setIsHost(false); setGameData(null); sessionStorage.removeItem('duel_room_id'); setView('menu');
+  // ★修正: タイトルに戻る（キャンセル）時の処理
+  const handleBackToTitle = async () => {
+      // 自分がホストで、まだマッチング待ち状態なら、部屋を削除する！🔥
+      if (isHost && roomId && gameData?.status === 'waiting') {
+          console.log("Canceling matchmaking, deleting room:", roomId);
+          await cancelRoom(roomId);
+      }
+
+      // ローカルの状態をリセット
+      setRoomId(""); 
+      setIsHost(false); 
+      setGameData(null); 
+      sessionStorage.removeItem('duel_room_id'); 
+      setView('menu');
   };
 
   // --- デッキ操作関数 ---
@@ -157,21 +170,21 @@ export default function App() {
 
   // コイントス終了時の処理
   const handleCoinTossEnd = useCallback(async () => {
-    // ホストの人だけがデータベースを更新してフェーズを進めるよ！
     if (isHost && roomId) {
-        console.log("Coin toss finished! Moving to mulligan..."); // ログも出してみよう
+        console.log("Coin toss finished! Moving to mulligan..."); 
         const roomRef = doc(db, 'artifacts', 'my-card-game', 'public', 'data', 'rooms', `room_${roomId}`);
         await updateDoc(roomRef, { turnPhase: 'mulligan' });
     }
-  }, [isHost, roomId]); // roomId か isHost が変わった時だけ作り直す
+  }, [isHost, roomId]);
 
   // 4. Render
   return (
       <ErrorBoundary>
-          {/* ★修正: Game以外（デッキ構築含む）はこっちのモーダルを使う！ */}
-          {view !== 'game' && <CardDetailModal detailCard={detailCard} onClose={() => setDetailCard(null)} />}
+          {/* ★詳細モーダル制御（透明な壁対策済み） */}
+          {detailCard && view !== 'game' && (
+              <CardDetailModal detailCard={detailCard} onClose={() => setDetailCard(null)} />
+          )}
           
-          {/* ★修正: オーバーレイはGame画面専用にする！ */}
           {view === 'game' && detailCard && (
               <div className="fixed top-4 left-4 z-[9999] pointer-events-none animate-in fade-in zoom-in duration-200 shadow-2xl rounded-xl overflow-hidden ring-4 ring-yellow-500/50">
                   <div className="bg-slate-900/90 backdrop-blur-sm p-4 rounded-xl">
@@ -192,8 +205,6 @@ export default function App() {
                   </div>
               </div>
           )}
-          
-          {/* ポップアップ削除済み (OK!) */}
           
           {notification && ( <div key={notification.key} className={`fixed top-32 z-[100] animate-pop-notification ${notification.side === 'left' ? 'left-20' : 'right-20'}`}> <div className="relative transform scale-150 origin-top"> <Card card={notification.card} location="detail" /> </div> </div> )}
           
