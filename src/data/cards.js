@@ -293,11 +293,18 @@ export const CARD_DATABASE = [
     "name": "吹雪",
     "cost": 5,
     "description": "敵全体に2ダメージ。",
-    "onPlay": {
+    "onPlay": [
+    {
       "type": "damage_all",
       "value": 2,
       "target": "enemy_unit"
-    }
+    },
+      {
+        "type": "damage_face",
+        "value": 2
+      }
+    ]
+    
   },
   {
     "id": 1006,
