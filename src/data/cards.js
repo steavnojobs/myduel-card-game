@@ -500,7 +500,7 @@ export const CARD_DATABASE = [
     "cost": 2,
     "attack": 2,
     "health": 2,
-    "description": "【登場時】手札に「兵士の剣」を加える。",
+    "description": "【登場時】手札にスペル「兵士の剣」を加える。",
     "onPlay": {
       "type": "generate_card",
       "value": 9006
@@ -1137,10 +1137,10 @@ export const CARD_DATABASE = [
     "cost": 10,
     "attack": 10,
     "health": 10,
-    "description": "【登場時】敵全体に5ダメージ。",
+    "description": "【登場時】このユニット以外に10ダメージ。",
     "onPlay": {
-      "type": "damage_all",
-      "value": 5,
+      "type": "damage_all_other",
+      "value": 10,
       "target": "enemy_unit"
     }
   },
