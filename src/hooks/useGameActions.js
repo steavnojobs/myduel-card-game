@@ -34,34 +34,55 @@ export const useGameActions = ({
 
     const getRoomRef = (rId) => doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${rId}`);
 
-    const submitMulligan = async (exchangeUids) => {
+    // --- ★修正: インデックスベースのマリガン処理 ---
+    const submitMulligan = async (selectedIndices) => {
         if (!gameData || !roomId) return;
         const roomRef = getRoomRef(roomId);
         const me = gameData[myRole];
-        let newHand = [...me.hand];
-        let newDeck = [...me.deck];
-        const cardsToReturn = [];
-        newHand = newHand.filter(card => {
-            if (exchangeUids.includes(card.uid)) {
-                cardsToReturn.push(card);
-                return false;
+        
+        // 二重送信防止
+        if (me.mulliganDone) return;
+
+        console.log("Submitting Mulligan with indices:", selectedIndices);
+
+        const currentHand = [...me.hand];
+        let currentDeck = [...me.deck]; // IDの配列
+        
+        const keptCards = [];
+        const cardsToReturnIds = [];
+
+        // インデックスに基づいて仕分け
+        currentHand.forEach((card, index) => {
+            if (selectedIndices.includes(index)) {
+                cardsToReturnIds.push(card.id); // 交換：IDをリストへ
+            } else {
+                keptCards.push(card); // 残す：そのままキープ
             }
-            return true;
         });
-        const idsToReturn = cardsToReturn.map(c => c.id).filter(id => id !== undefined);
-        newDeck = [...newDeck, ...idsToReturn];
-        newDeck = shuffleDeck(newDeck);
-        const drawCount = cardsToReturn.length;
-        if (drawCount > 0) {
-            const drawnIds = newDeck.splice(0, drawCount);
-            const drawnCards = drawnIds.map(id => ({ ...getCard(id), id: id, uid: generateId() }));
-            newHand = [...newHand, ...drawnCards];
-        }
+
+        // 戻したカードをデッキに加えてシャッフル
+        currentDeck = shuffleDeck([...currentDeck, ...cardsToReturnIds]);
+
+        // 新しいカードをドロー (交換枚数分)
+        const drawCount = cardsToReturnIds.length;
+        const drawnIds = currentDeck.splice(0, drawCount); // デッキ先頭から取得
+
+        const newDrawnCards = drawnIds.map(id => ({ 
+            ...getCard(id), 
+            id: id,
+            uid: generateId() 
+        }));
+
+        // 新しい手札を作成 (残したカード + 新しく引いたカード)
+        const newHand = [...keptCards, ...newDrawnCards];
+
         let updates = {};
         updates[`${myRole}.hand`] = newHand;
-        updates[`${myRole}.deck`] = newDeck;
+        updates[`${myRole}.deck`] = currentDeck;
         updates[`${myRole}.mulliganDone`] = true;
+        
         await updateDoc(roomRef, updates);
+        console.log("Mulligan Complete! New Hand:", newHand);
     };
 
     const initiatePlayCard = (card) => {
@@ -93,7 +114,6 @@ export const useGameActions = ({
             if (card.onPlay) effectLog = processEffect(card.onPlay, me, enemy, updates, myRole, enemyRole, gameData, playedCard.uid, targetUid);
         }
         
-        // --- ★修正: 死亡判定＆墓地送り ---
         const checkDeath = (board, prefix, enemyPrefix) => {
             if (!board) return; 
             let deadUnits = [], aliveUnits = []; 
@@ -104,7 +124,6 @@ export const useGameActions = ({
             
             if (deadUnits.length > 0) {
                 updates[`${prefix}.board`] = aliveUnits;
-                // 墓地へ送る
                 const currentGraveyard = updates[`${prefix}.graveyard`] || gameData[prefix].graveyard || [];
                 updates[`${prefix}.graveyard`] = [...currentGraveyard, ...deadUnits];
 
@@ -172,14 +191,12 @@ export const useGameActions = ({
             updates[`${enemyRole}.board`] = finalEnemyBoard.map(u => u.uid === target.uid ? processedTarget : u); updates[`${myRole}.board`] = finalMyBoard.map(u => u.uid === attacker.uid ? processedAttacker : u);
         }
         
-        // --- ★修正: 死亡判定＆墓地送り (攻撃時) ---
         const handleDeath = (board, prefix, oppPrefix) => {
             let dead = [], alive = [];
             board.forEach(u => { if (u.currentHp <= 0) dead.push(u); else alive.push(u); });
             
             if (dead.length > 0) {
                 updates[`${prefix}.board`] = alive;
-                // 墓地へ
                 const currentGraveyard = updates[`${prefix}.graveyard`] || gameData[prefix].graveyard || [];
                 updates[`${prefix}.graveyard`] = [...currentGraveyard, ...dead];
 

@@ -432,9 +432,9 @@ export const CARD_DATABASE = [
     "class": "Gaia",
     "type": "unit",
     "name": "妖精女王・ティターニア",
-    "cost": 7,
-    "attack": 5,
-    "health": 6,
+    "cost": 3,
+    "attack": 2,
+    "health": 3,
     "description": "【登場時】自分のユニットを手札に戻す。",
     "onPlay": {
       "type": "return_to_hand",
