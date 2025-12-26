@@ -66,11 +66,11 @@ export const CARD_DATABASE = [
     "cost": 1,
     "attack": 1,
     "health": 1,
-    "description": "【速攻】【破壊時】敵リーダーに2ダメージ。",
+    "description": "【速攻】【破壊時】敵リーダーに1ダメージ。",
     "haste": true,
     "onDeath": {
       "type": "damage_face",
-      "value": 2
+      "value": 1
     }
   },
   {
@@ -131,7 +131,7 @@ export const CARD_DATABASE = [
     "class": "Ignis",
     "type": "spell",
     "name": "雷撃",
-    "cost": 4,
+    "cost": 5,
     "description": "敵プレイヤーに5ダメージ。",
     "onPlay": {
       "type": "damage_face",
@@ -395,8 +395,8 @@ export const CARD_DATABASE = [
     "class": "Gaia",
     "type": "unit",
     "name": "エルフの剣豪",
-    "cost": 2,
-    "attack": 3,
+    "cost": 3,
+    "attack": 2,
     "health": 2,
     "description": "【連撃】",
     "doubleAttack": true
@@ -621,14 +621,13 @@ export const CARD_DATABASE = [
     "id": 53,
     "class": "Order",
     "type": "unit",
-    "name": "風の王",
+    "name": "雷の王 ア・ルゥベール",
     "cost": 8,
     "attack": 3,
     "health": 5,
-    "description": "【速攻】【連撃】【聖なる盾】【挑発】",
+    "description": "【速攻】【連撃】【挑発】",
     "haste": true,
     "doubleAttack": true,
-    "divineShield": true,
     "taunt": true
   },
   {
@@ -1161,20 +1160,20 @@ export const CARD_DATABASE = [
     "class": "Neutral",
     "type": "unit",
     "name": "ギガント・コマンダーX",
-    "cost": 10,
-    "attack": 2,
-    "health": 12,
-    "description": "【ドロー時】【攻撃時】【ターン終了時】攻撃力+1。",
+    "cost": 8,
+    "attack": 1,
+    "health": 5,
+    "description": "【ドロー時】【攻撃時】【ターン終了時】ステータスを倍にする。",
     "onDrawTrigger": {
-      "type": "buff_self_attack",
+      "type": "double_stats",
       "value": 1
     },
     "turnEnd": {
-      "type": "buff_self_attack",
+      "type": "double_stats",
       "value": 1
     },
     "onAttack": {
-      "type": "buff_self_attack",
+      "type": "double_stats",
       "value": 1
     }
   },
