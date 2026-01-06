@@ -9,7 +9,6 @@ const Card = ({
   isDragging = false,
   isAttacking = false,
   isDying = false,
-  isBouncing = false, // ★追加: バウンス中かどうかのフラグ
   count = null,
   maxCount = null,
   onClick,
@@ -30,15 +29,9 @@ const Card = ({
 
   useEffect(() => {
     if (card.type !== 'unit' && card.type !== 'building') return;
-    
-    // ★修正: 死ぬ時やバウンス時はHPポップアップを出さない！
-    if (isDying || isBouncing) return; 
-
     if (typeof card.currentHp === 'undefined') return; 
     const currentHp = card.currentHp !== undefined ? card.currentHp : card.health;
     const diff = currentHp - prevHpRef.current;
-    
-    // location check + diff check
     if (diff !== 0 && (location === 'board' || location === 'hand')) {
       setHpPopup({ value: diff, key: Date.now() });
       const timer = setTimeout(() => setHpPopup(null), 1000);
@@ -46,7 +39,7 @@ const Card = ({
       return () => clearTimeout(timer);
     }
     prevHpRef.current = currentHp;
-  }, [card.currentHp, card.health, location, card.type, isDying, isBouncing]); // 依存配列に追加
+  }, [card.currentHp, card.health, location, card.type]);
 
   useEffect(() => {
     if (location === 'board') {
@@ -67,22 +60,19 @@ const Card = ({
     '--atk-y': `${isAttacking.y}px`,
   } : {};
 
-  const isGrayedOut = location === 'board' && card.type === 'unit' && !card.canAttack && !isAttacking && !isDying && !isBouncing;
+  const isGrayedOut = location === 'board' && card.type === 'unit' && !card.canAttack && !isAttacking && !isDying;
 
   switch (location) {
     case 'board':
       sizeStyle = "w-20 h-28 md:w-32 md:h-48"; 
-      
-      // ★修正: バウンス時は専用アニメーション、死亡時は死亡アニメーション
-      if (isBouncing) behaviorStyle = "animate-bounce-return z-50 pointer-events-none opacity-50"; 
-      else if (isDying) behaviorStyle = "animate-fade-out-death z-0 pointer-events-none"; 
+      if (isDying) behaviorStyle = "animate-fade-out-death z-0 pointer-events-none"; 
       else if (isAttacking) behaviorStyle = "animate-attack-thrust z-50"; 
       else if (!hasLanded) behaviorStyle = "animate-summon-land"; 
 
       if (isGrayedOut) behaviorStyle += " cursor-default"; 
-      else if (card.type === 'unit' && card.canAttack && !isDying && !isBouncing) behaviorStyle += " cursor-pointer hover:scale-105 hover:shadow-lg hover:ring-2 hover:ring-yellow-400";
+      else if (card.type === 'unit' && card.canAttack && !isDying) behaviorStyle += " cursor-pointer hover:scale-105 hover:shadow-lg hover:ring-2 hover:ring-yellow-400";
 
-      if (isSelected && !isDying && !isBouncing) behaviorStyle += " cursor-crosshair ring-4 ring-green-400 -translate-y-2 shadow-[0_0_20px_rgba(74,222,128,0.8)] z-20 scale-105";
+      if (isSelected && !isDying) behaviorStyle += " cursor-crosshair ring-4 ring-green-400 -translate-y-2 shadow-[0_0_20px_rgba(74,222,128,0.8)] z-20 scale-105";
       break;
 
     case 'hand':
@@ -103,7 +93,8 @@ const Card = ({
 
     case 'library':
       sizeStyle = "w-full h-0 pb-[150%]"; 
-      if (count >= maxCount) behaviorStyle = "opacity-50 grayscale cursor-default";
+      // maxCountが異常に大きい(999)時は墓地表示なのでグレーアウトしない
+      if (maxCount < 100 && count >= maxCount) behaviorStyle = "opacity-50 grayscale cursor-default";
       else behaviorStyle = "cursor-grab active:cursor-grabbing hover:scale-105 hover:z-10 shadow-md";
       break;
 
@@ -149,11 +140,12 @@ const Card = ({
       onClick={onClick}
       onMouseDown={onMouseDown} 
       onContextMenu={onContextMenu}
-      draggable={location !== 'board' && (location === 'library' ? (count < maxCount) : isPlayable)}
+      draggable={location !== 'board' && (location === 'library' ? (count < maxCount || maxCount >= 100) : isPlayable)}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
       <div className={`absolute inset-0 w-full h-full transition-all duration-300 ${isGrayedOut ? 'grayscale opacity-80' : ''}`}>
+        
         <img 
           src={`/images/cards/${card.id}.webp`}
           alt={card.name}
@@ -161,10 +153,13 @@ const Card = ({
           className="absolute inset-[2.5%] w-[95%] h-[95%] object-cover bg-slate-800 z-0 rounded-sm"
           onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-slate-700'); }}
         />
+
         <div className={`absolute inset-0 z-10 pointer-events-none ${isGameDetail ? 'bg-black/40' : ''}`}>
             <img src="/images/frame.png" alt="frame" draggable={false} className="w-full h-full" />
         </div>
+
         <div className="absolute inset-0 z-20 flex flex-col justify-between p-[6%] pointer-events-none" style={{ containerType: 'size' }}>
+          
           <div className="flex justify-between items-start">
             <div className="flex flex-col items-start w-[25%]">
                 <div className="relative w-[100%] aspect-square">
@@ -173,13 +168,26 @@ const Card = ({
                 </div>
                 {(location === 'hand' || location === 'board') && !isDetail && !isGameDetail && (<KeywordLabels />)}
             </div>
+
             <div className="flex flex-col items-end gap-[1cqw] z-20">
+              
+              {/* ★ここを修正！ */}
               {location === 'library' && count !== null && (
-                 <div className={`px-[0.4em] py-[0.1em] rounded text-[10cqw] font-bold border border-white/20 shadow-lg ${count >= maxCount ? 'bg-red-600 text-white' : 'bg-black/70 text-yellow-400'}`}>{count}/{maxCount}</div>
+                 <div className={`px-[0.4em] py-[0.1em] rounded text-[10cqw] font-bold border border-white/20 shadow-lg 
+                   ${(count >= maxCount && maxCount < 100) ? 'bg-red-600 text-white' : 'bg-black/70 text-yellow-400'}`}>
+                   {/* 100以上(墓地など)なら「× count」、それ以外(デッキ編集)なら「count/max」 */}
+                   {maxCount >= 100 ? `×${count}` : `${count}/${maxCount}`}
+                 </div>
               )}
-              {location === 'library' && (<div className="flex flex-col gap-[2px] items-end mt-[2px]"><KeywordLabels /></div>)}
+              
+              {location === 'library' && (
+                <div className="flex flex-col gap-[2px] items-end mt-[2px]">
+                    <KeywordLabels />
+                </div>
+              )}
             </div>
           </div>
+
           <div className="flex flex-col gap-[2%]">
             {isGameDetail && card.description && (
                 <div className="absolute top-[55%] left-0 w-full px-4 z-50">
@@ -211,23 +219,31 @@ const Card = ({
             </div>
           </div>
         </div>
-        {location === 'board' && !isDying && !isBouncing && (
+
+        {location === 'board' && !isDying && (
           <div className="absolute inset-0 z-15 pointer-events-none flex items-center justify-center overflow-hidden rounded-lg">
             {card.taunt && (<img src="/images/effect_taunt.png" alt="Taunt" className="absolute w-[90%] h-[90%] object-contain animate-slow-pulse opacity-80" />)}
           </div>
         )}
+
       </div> 
+
       {hpPopup && (
-        <div key={hpPopup.key} className={`absolute inset-0 z-[60] flex items-center justify-center font-black text-6xl md:text-7xl pointer-events-none animate-float-damage drop-shadow-[0_4px_4px_rgba(0,0,0,1)] stroke-black ${hpPopup.value > 0 ? 'text-green-400' : 'text-red-500'}`} style={{ textShadow: '0 0 10px black' }}>
+        <div 
+          key={hpPopup.key}
+          className={`absolute inset-0 z-[60] flex items-center justify-center font-black text-6xl md:text-7xl pointer-events-none animate-float-damage drop-shadow-[0_4px_4px_rgba(0,0,0,1)] stroke-black ${hpPopup.value > 0 ? 'text-green-400' : 'text-red-500'}`}
+          style={{ textShadow: '0 0 10px black' }}
+        >
           {hpPopup.value > 0 ? `+${hpPopup.value}` : hpPopup.value}
         </div>
       )}
+
       {isGrayedOut && (
         <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/20 pointer-events-none">
           <RefreshCw size={24} className="text-white opacity-80 drop-shadow-md animate-pulse" />
         </div>
       )}
-      {isSelected && !isDying && !isBouncing && <div className="absolute inset-0 border-4 border-green-400 rounded-lg z-40 animate-pulse pointer-events-none box-border"></div>}
+      {isSelected && !isDying && <div className="absolute inset-0 border-4 border-green-400 rounded-lg z-40 animate-pulse pointer-events-none box-border"></div>}
     </div>
   );
 };
