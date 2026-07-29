@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Card from './Card';
-import { Zap, Layers, Shield, SkipForward } from 'lucide-react';
+import { Zap, Shield, SkipForward } from 'lucide-react'; // Layers(デッキアイコン)は使わなくなるので削除OK
 
 const PlayerConsole = ({ 
   me, 
@@ -11,7 +11,7 @@ const PlayerConsole = ({
   onDragStart, 
   onDragEnd 
 }) => {
-  // ★HP変動ポップアップ用のロジック
+  // HP変動ポップアップ用のロジック
   const [hpPopup, setHpPopup] = useState(null);
   const prevHpRef = useRef(me?.hp);
 
@@ -43,8 +43,7 @@ const PlayerConsole = ({
           id="my-face"
           className="flex flex-col items-center animate-in slide-in-from-bottom-2 duration-500 relative w-full"
         >
-           
-           {/* ★ダメージポップアップ (頭上に出現！) */}
+           {/* ダメージポップアップ */}
            {hpPopup && (
              <div 
                key={hpPopup.key}
@@ -56,14 +55,14 @@ const PlayerConsole = ({
              </div>
            )}
 
-           {/* ライフ表示 (ハート + デカ文字) */}
+           {/* ライフ表示 */}
            <div className="flex items-center gap-1 relative">
              <span className="text-5xl text-red-600 drop-shadow-md animate-pulse">♥</span>
              <span className="text-6xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-none font-serif">
                {me.hp}
              </span>
              
-             {/* 装甲があれば表示 */}
+             {/* 装甲 */}
              {me.armor > 0 && (
                  <div className="absolute -top-4 -right-4 flex items-center justify-center w-10 h-10 bg-slate-300 rounded-full border-2 border-slate-500 shadow-lg z-10">
                      <Shield size={20} className="text-slate-600 absolute opacity-20"/>
@@ -98,12 +97,11 @@ const PlayerConsole = ({
       <div className="flex-1 flex justify-center items-center h-full relative perspective-1000 z-50">
         <div className="flex justify-center items-end w-full max-w-4xl px-8 pb-6" style={{ transformStyle: 'preserve-3d' }}>
           {me.hand.map((card, index) => {
-            // ★扇状に広げる計算
             const total = me.hand.length;
             const center = (total - 1) / 2;
             const offset = index - center;
-            const rotate = offset * 3; // 角度
-            const translateY = Math.abs(offset) * 6; // 中央を高く
+            const rotate = offset * 3; 
+            const translateY = Math.abs(offset) * 6; 
             const zIndex = index + 10;
 
             return (
@@ -113,13 +111,12 @@ const PlayerConsole = ({
                     style={{ 
                         transform: `rotate(${rotate}deg) translateY(${translateY}px)`,
                         zIndex: zIndex,
-                        marginLeft: index === 0 ? 0 : '-35px' // カードを重ねる
+                        marginLeft: index === 0 ? 0 : '-35px'
                     }}
                     onDragStart={(e) => onDragStart(e, card, 'hand')}
                     onDragEnd={onDragEnd}
-                    draggable // ドラッグ可能に
+                    draggable
                 >
-                    {/* ★重要: location="hand" を渡すことでIDが付与され、右クリック詳細が可能になる！ */}
                     <Card 
                         card={card} 
                         location="hand" 
@@ -132,12 +129,10 @@ const PlayerConsole = ({
         </div>
       </div>
 
-      {/* --- 右側：デッキ枚数 & ターン終了ボタン --- */}
+      {/* --- 右側：ターン終了ボタンのみ (DECK表示削除済み！) --- */}
       <div className="w-32 md:w-40 mb-2 flex flex-col items-end gap-2 z-10">
-        <div className="text-slate-500 font-bold text-xs mb-1 flex items-center gap-1 bg-black/40 px-2 py-1 rounded-full border border-white/10">
-          <Layers size={14}/>
-          DECK: {me.deck.length}
-        </div>
+        
+        {/* ★ここに書いてあった DECK: x を削除しました！スッキリ！✨ */}
         
         <button 
           onClick={onEndTurn}

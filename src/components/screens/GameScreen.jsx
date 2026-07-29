@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MAX_MANA_LIMIT } from '../../data/rules';
 import GameHeader from '../game/GameHeader';
 import GameBoard from '../game/GameBoard';
 import PlayerConsole from '../game/PlayerConsole';
 import GameSidebar from '../game/GameSidebar';
 import Card from '../game/Card';
+import LogModal from '../game/LogModal'; // ★新規追加
 
 export default function GameScreen({ 
     gameData, myRole, enemyRole, isMyTurn, 
@@ -13,7 +14,34 @@ export default function GameScreen({
     initiatePlayCard, endTurn, handleGameDragStart, handleGameDragEnd, resolveStartPhase 
 }) {
     const [showGraveyard, setShowGraveyard] = useState(false);
+    const [viewingGraveyardOwner, setViewingGraveyardOwner] = useState(null); // 'me' or 'enemy'
+    
+    // ★追加: ログウィンドウの状態管理
+    const [showLog, setShowLog] = useState(false);
+    const [gameLogs, setGameLogs] = useState([]);
 
+    // ★追加: lastActionが変わるたびにログ履歴に追加する！
+    useEffect(() => {
+        if (gameData?.lastAction) {
+            setGameLogs(prev => {
+                // 同じログの重複追加を防ぐ簡易チェック（厳密にやるならIDが必要だけど今はこれでOK）
+                if (prev.length > 0 && prev[prev.length - 1].text === gameData.lastAction) return prev;
+                return [...prev, { 
+                    turn: gameData.turnCount, 
+                    text: gameData.lastAction,
+                    timestamp: Date.now()
+                }];
+            });
+        }
+    }, [gameData?.lastAction, gameData?.turnCount]);
+
+    // 墓地を開く処理
+    const handleOpenGraveyard = (owner) => {
+        setViewingGraveyardOwner(owner);
+        setShowGraveyard(true);
+    };
+
+    // 墓地の整理整頓ロジック
     const processGraveyard = (graveyard) => {
         if (!graveyard || !Array.isArray(graveyard)) return [];
         const counts = {};
@@ -33,7 +61,12 @@ export default function GameScreen({
             });
     };
 
-    const sortedGraveyard = processGraveyard(gameData[myRole].graveyard);
+    // 表示する墓地データを選択（自分 or 敵）
+    const targetGraveyardData = viewingGraveyardOwner === 'enemy' 
+        ? gameData[enemyRole].graveyard 
+        : gameData[myRole].graveyard;
+
+    const sortedGraveyard = processGraveyard(targetGraveyardData);
 
     return (
         <div className="flex w-full min-h-screen bg-slate-900 text-white font-sans overflow-hidden select-none" onContextMenu={(e) => e.preventDefault()}>
@@ -77,12 +110,14 @@ export default function GameScreen({
                     enemy={gameData[enemyRole]} 
                     onFaceClick={() => handleTargetSelection('face', 'FACE')} 
                     isTargetMode={!!aimingState || (!!targetingHandCard && ['all_enemy', 'face', 'any'].includes(targetingHandCard.mode))} 
-                    onSurrender={handleSurrender} 
+                    onSurrender={handleSurrender}
+                    onToggleLog={() => setShowLog(true)} // ★追加
                 />
                 
                 <GameBoard 
                     myBoard={gameData[myRole].board} enemyBoard={gameData[enemyRole].board}
-                    isMyTurn={isMyTurn} turnCount={gameData.turnCount} lastAction={gameData.lastAction}
+                    isMyTurn={isMyTurn} turnCount={gameData.turnCount} 
+                    lastAction={null} // ★変更: ここでlastActionを渡さなくして、浮遊ログを消す！
                     selectedUnit={selectedUnit} isDragging={isDragging}
                     onCardClick={(unit) => handleTargetSelection('unit', unit.uid)} 
                     onBoardDragStart={handleBoardDragStart}
@@ -90,7 +125,6 @@ export default function GameScreen({
                     onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
                     attackingState={attackingState}
                     targetingHandCard={targetingHandCard}
-                    // ★追加: 墓地やバウンスのエフェクト用にデータを渡す
                     bouncedUid={gameData.bouncedUid} 
                 />
                 
@@ -99,33 +133,32 @@ export default function GameScreen({
                     onPlayCard={initiatePlayCard} onEndTurn={endTurn} onContextMenu={handleContextMenu}
                     onDragStart={handleGameDragStart} onDragEnd={handleGameDragEnd}
                 />
-
-                <div 
-                    className="absolute bottom-40 right-4 w-16 h-16 bg-slate-800/90 border-2 border-slate-600 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 hover:bg-slate-700 transition-all z-20 shadow-xl"
-                    onClick={() => setShowGraveyard(true)}
-                    title="墓地を見る"
-                >
-                    <span className="text-2xl drop-shadow-md">🪦</span>
-                    <div className="text-xs text-slate-200 font-bold mt-1">
-                        {gameData[myRole].graveyard?.length || 0}
-                    </div>
-                </div>
             </div>
             
-            <GameSidebar me={gameData[myRole]} enemy={gameData[enemyRole]} />
+            <GameSidebar 
+                me={gameData[myRole]} 
+                enemy={gameData[enemyRole]} 
+                onOpenGraveyard={handleOpenGraveyard} // ★追加
+            />
 
+            {/* ログモーダル */}
+            {showLog && (
+                <LogModal logs={gameLogs} onClose={() => setShowLog(false)} />
+            )}
+
+            {/* 墓地モーダル (共通化) */}
             {showGraveyard && (
-                <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-8" onClick={() => setShowGraveyard(false)}>
+                <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-8 animate-in fade-in" onClick={() => setShowGraveyard(false)}>
                     <div 
-                        className="bg-slate-900/95 border-2 border-purple-500 rounded-xl p-6 max-w-5xl w-full max-h-[85vh] overflow-y-auto shadow-2xl relative animate-in fade-in zoom-in duration-200" 
+                        className="bg-slate-900/95 border-2 border-purple-500 rounded-xl p-6 max-w-5xl w-full max-h-[85vh] overflow-y-auto shadow-2xl relative animate-in zoom-in-95 duration-200" 
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4 sticky top-0 bg-slate-900/95 z-10">
                             <h2 className="text-3xl text-white font-black flex items-center gap-3">
                                 <span className="text-4xl">🪦</span>
-                                墓地
+                                {viewingGraveyardOwner === 'enemy' ? '敵の墓地' : '自分の墓地'}
                                 <span className="text-xl text-slate-400 font-normal ml-2">
-                                    ({gameData[myRole].graveyard?.length || 0}枚)
+                                    ({sortedGraveyard.length}枚)
                                 </span>
                             </h2>
                             <button 
